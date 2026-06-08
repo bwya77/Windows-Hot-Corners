@@ -40,10 +40,17 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ; Close a running Hot Corners before replacing files so the in-app update can replace the
-; locked executable. Relaunch is handled explicitly in [Run] (including silent installs),
-; not via Restart Manager, which does not reliably restart the app after a silent update.
-CloseApplications=yes
+; locked executable. CloseApplications=force tells Inno to forcibly terminate any process
+; that doesn't respond to the Restart Manager close request (WinForms tray + WinUI 3
+; settings app don't always cooperate with RM). AppMutex lets Inno detect the tray
+; instance upfront via its single-instance mutex. PrepareToInstall (below) is a final
+; belt-and-suspenders taskkill so file replacement never fails on locked exes.
+; Relaunch is handled explicitly in [Run] (including silent installs), not via Restart
+; Manager, which does not reliably restart the app after a silent update.
+CloseApplications=force
+CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
+AppMutex=HotCorners.SingleInstance
 #if Arch == "arm64"
 ArchitecturesAllowed=arm64
 ArchitecturesInstallIn64BitMode=arm64
@@ -78,6 +85,20 @@ Filename: "{app}\HotCorners.exe"; Parameters: "--enable-startup"; Flags: nowait 
 Filename: "{app}\HotCorners.exe"; Flags: nowait runasoriginaluser; Tasks: not startupwithwindows; Check: WizardSilent
 
 [Code]
+// Final belt-and-suspenders: even with CloseApplications=force and AppMutex, Restart Manager
+// occasionally can't close the WinForms tray + WinUI 3 settings app cleanly (the "Setup was
+// unable to automatically close all applications" dialog). Force-kill both processes right
+// before file copy so the install never fails on locked exes.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  resultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HotCorners.exe',          '', SW_HIDE, ewWaitUntilTerminated, resultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HotCorners.Settings.exe', '', SW_HIDE, ewWaitUntilTerminated, resultCode);
+  Sleep(400);
+  Result := '';
+end;
+
 // Best-effort cleanup of the legacy per-user install at %LocalAppData%\Programs\HotCorners that
 // the early install.ps1 script created. Stop the process there (if it's running from the user
 // dir) and delete the folder so we end up with a single canonical Program Files install.
