@@ -12,6 +12,8 @@ internal sealed class TrayContext : ApplicationContext
 {
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _poll;
+    private readonly System.Windows.Forms.Timer _trayWatchdog;
+    private readonly TaskbarRecreatedListener _taskbarListener;
     private readonly SettingsStore _store = new();
     private readonly UpdateService _updateService;
     private readonly OverlayManager _overlay = new();
@@ -50,6 +52,20 @@ internal sealed class TrayContext : ApplicationContext
         _poll = new System.Windows.Forms.Timer { Interval = 15 };
         _poll.Tick += OnPoll;
         _poll.Start();
+
+        // Bulletproof tray icon visibility. Two layers:
+        //   1. TaskbarRecreatedListener — re-adds the icon when Explorer restarts (Explorer
+        //      broadcasts the registered "TaskbarCreated" message). WinForms NotifyIcon
+        //      already handles this internally in most cases but has been observed to miss
+        //      it under heavy boot or session-switch races.
+        //   2. _trayWatchdog — a 60s safety net that re-issues NIM_ADD even if we missed
+        //      the broadcast (e.g. icon was created before Explorer was fully ready).
+        // Both work by toggling Visible, which forces Shell_NotifyIcon(NIM_ADD) and is a
+        // no-op visually when the icon is already showing.
+        _taskbarListener = new TaskbarRecreatedListener(EnsureTrayVisible);
+        _trayWatchdog = new System.Windows.Forms.Timer { Interval = 60_000 };
+        _trayWatchdog.Tick += (_, _) => EnsureTrayVisible();
+        _trayWatchdog.Start();
 
         _updateService = new UpdateService(_tray, ShowUpdatePrompt);
         _updateService.StartBackgroundChecks();
@@ -220,6 +236,19 @@ internal sealed class TrayContext : ApplicationContext
         _updateForm.Show();
     }
 
+    private void EnsureTrayVisible()
+    {
+        try
+        {
+            // Force a Shell_NotifyIcon(NIM_ADD) by toggling Visible. The WinForms setter
+            // only issues an Add when transitioning false→true, so the toggle is required.
+            // Both calls run on the same UI tick — no visible flicker.
+            _tray.Visible = false;
+            _tray.Visible = true;
+        }
+        catch { /* shutdown race — fine to swallow */ }
+    }
+
     private void OnPoll(object? sender, EventArgs e)
     {
         if (_paused) { _overlay.Cancel(); return; }
@@ -355,6 +384,9 @@ internal sealed class TrayContext : ApplicationContext
         {
             _poll.Stop();
             _poll.Dispose();
+            _trayWatchdog.Stop();
+            _trayWatchdog.Dispose();
+            _taskbarListener.Dispose();
             _updateService.Dispose();
             _store.Changed -= OnSettingsChanged;
             _store.Dispose();
@@ -375,4 +407,35 @@ internal sealed class TrayContext : ApplicationContext
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    /// <summary>
+    /// Hidden message-only window that listens for Explorer's "TaskbarCreated" broadcast
+    /// (sent when the shell tray is created or recreated, e.g. after explorer.exe restarts).
+    /// When received, re-adds the NotifyIcon so it doesn't silently vanish from the tray.
+    /// </summary>
+    private sealed class TaskbarRecreatedListener : NativeWindow, IDisposable
+    {
+        private static readonly uint TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
+        private readonly Action _onCreated;
+
+        public TaskbarRecreatedListener(Action onCreated)
+        {
+            _onCreated = onCreated;
+            CreateHandle(new CreateParams { Caption = "HotCornersTaskbarWatcher" });
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == TaskbarCreated)
+            {
+                try { _onCreated(); } catch { /* don't crash the message pump */ }
+            }
+            base.WndProc(ref m);
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern uint RegisterWindowMessage(string lpString);
+
+        public void Dispose() => DestroyHandle();
+    }
 }
