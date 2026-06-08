@@ -271,15 +271,15 @@ ul { padding-left: 1.1rem; }
 /* Wallpaper darkens when Task View activates, like the real OS overlay */
 .wallpaper {
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0));
-  animation: wallpaper-dim 7s ease-in-out 0.4s infinite;
+  background-color: rgba(0,0,0,0);
+  animation: wallpaper-dim 7s ease-in-out 0.55s infinite both;
   pointer-events: none;
+  z-index: 2;
 }
 @keyframes wallpaper-dim {
-  0%, 26% { background-color: rgba(0,0,0,0);   backdrop-filter: blur(0); }
-  34%     { background-color: rgba(0,0,0,0.35); }
-  56%     { background-color: rgba(0,0,0,0.35); }
-  68%, 100% { background-color: rgba(0,0,0,0); }
+  0%, 14%  { background-color: rgba(0,0,0,0); }
+  24%, 58% { background-color: rgba(0,0,0,0.35); }
+  66%, 100% { background-color: rgba(0,0,0,0); }
 }
 
 .corner {
@@ -308,7 +308,7 @@ ul { padding-left: 1.1rem; }
 
 /* TL corner blooms (chosen as the demo corner) */
 .corner.tl .puddle {
-  animation: bloom 7s ease-in-out 0.4s infinite;
+  animation: bloom 7s ease-in-out 0.4s infinite both;
 }
 
 @keyframes bloom {
@@ -435,18 +435,27 @@ ul { padding-left: 1.1rem; }
                             rgba(255,255,255,0.45) 22px 24px);
 }
 
-/* Stagger card entrance, then hold, then exit, synced with bloom */
-.tv-1 { animation: tv-pop 7s ease-out 0.4s infinite; animation-delay: calc(0.4s + 0.00s); }
-.tv-2 { animation: tv-pop 7s ease-out 0.4s infinite; animation-delay: calc(0.4s + 0.06s); }
-.tv-3 { animation: tv-pop 7s ease-out 0.4s infinite; animation-delay: calc(0.4s + 0.12s); }
-.tv-4 { animation: tv-pop 7s ease-out 0.4s infinite; animation-delay: calc(0.4s + 0.18s); }
+/* Stagger card entrance, then hold, then exit, synced with bloom.
+   IMPORTANT: use longhand animation-* properties only, so the per-card
+   animation-delay overrides cleanly without fighting the `animation` shorthand. */
+.tv-card {
+  animation-name: tv-pop;
+  animation-duration: 7s;
+  animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+.tv-1 { animation-delay: 0.55s; }
+.tv-2 { animation-delay: 0.65s; }
+.tv-3 { animation-delay: 0.75s; }
+.tv-4 { animation-delay: 0.85s; }
 
 @keyframes tv-pop {
-  0%, 24%  { opacity: 0; transform: translateY(14px) scale(0.88); }
-  32%      { opacity: 1; transform: translateY(0)    scale(1.00); }
+  0%, 14%  { opacity: 0; transform: translateY(18px) scale(0.85); }
+  24%      { opacity: 1; transform: translateY(0)    scale(1.00); }
   58%      { opacity: 1; transform: translateY(0)    scale(1.00); }
-  68%      { opacity: 0; transform: translateY(6px)  scale(0.94); }
-  100%     { opacity: 0; transform: translateY(6px)  scale(0.94); }
+  66%      { opacity: 0; transform: translateY(8px)  scale(0.93); }
+  100%     { opacity: 0; transform: translateY(8px)  scale(0.93); }
 }
 
 .frame-label {
