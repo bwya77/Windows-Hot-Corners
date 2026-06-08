@@ -20,6 +20,10 @@ macOS-style **Hot Corners** for Windows. Move your cursor into any corner of you
 
 ![Hot Corners settings, Corners pane](docs/screenshot-corners.png)
 
+<p align="center">
+  <img src="docs/hero.gif" width="540" alt="Animation: cursor slides into the top-left corner, a soft puddle blooms, and four Task View thumbnails pop in." />
+</p>
+
 ---
 
 ## Install
