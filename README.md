@@ -9,9 +9,12 @@ screen, hold it briefly, and a configurable action fires — Task View, Show
 Desktop, virtual desktop switching, lock screen, and more.
 
 Native tray app written in C# / .NET 8 — WinForms tray icon plus a
-WinUI 3 settings window. No runtime to install.
+WinUI 3 settings window. **Code-signed** with Azure Trusted Signing so
+Windows SmartScreen doesn't warn on download. No runtime to install.
 
 <br clear="left" />
+
+![Hot Corners settings — Corners pane](docs/screenshot-corners.png)
 
 ---
 
@@ -87,6 +90,14 @@ screen-shaped preview. Pick an action for any corner. Settings save instantly.
 - **Dwell time** (25–600 ms): how long the cursor must rest in a corner before
   firing. Default 150 ms. Drop to 25–50 ms if you want it nearly instant; bump
   to 250+ ms if you trigger by accident.
+- **Show corner overlay**: fades a soft translucent quarter-circle "puddle"
+  into the corner as you dwell, and gently grows + fades it out when the action
+  fires. Click-through and theme-aware (white-blue on dark wallpapers, deep
+  slate-blue on light). Default on.
+- **Monitors**: choose **All monitors** (every connected display arms its
+  outer corners) or **Primary monitor only** (other displays are inert). In
+  primary-only mode the inter-monitor neighbor check is also scoped to the
+  primary, so its corners stay armed even when sandwiched by other displays.
 - **Suppress in fullscreen apps**: skips firing while a true fullscreen app
   (game, full-screen video) is in the foreground. The Windows shell — Task View,
   Start, Search — is exempt, so you can still re-trigger a corner to toggle
@@ -130,6 +141,23 @@ dotnet publish -c Release -r win-x64 --self-contained true `
 
 The resulting `publish\x64\HotCorners.exe` has no external dependencies — copy
 it anywhere and run.
+
+---
+
+## Code signing
+
+Releases are signed with **Azure Trusted Signing** (Public Trust, Individual
+Developer identity bound to the publisher) so Windows SmartScreen stops
+warning on download and on launch-at-login. Each release also ships a signed
+SLSA build provenance attestation you can verify with:
+
+```powershell
+gh attestation verify .\HotCornersSetup-<version>-win-x64.exe `
+    --repo bwya77/Windows-Hot-Corners
+```
+
+See [SIGNING.md](SIGNING.md) for the full setup and the per-repo
+secrets/variables.
 
 ---
 

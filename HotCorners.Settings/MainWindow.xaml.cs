@@ -53,6 +53,17 @@ public sealed partial class MainWindow : Window
             try { AppWindow.SetIcon(iconPath); } catch { /* best effort */ }
         }
 
+        // The About page shows the actual app icon (PNG) — load it from the
+        // Assets folder copied next to the exe (this is an unpackaged WinUI 3
+        // app, so file URIs work directly).
+        try
+        {
+            var logoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "icon-256.png");
+            if (File.Exists(logoPath))
+                AboutLogo.Source = new BitmapImage(new Uri(logoPath));
+        }
+        catch { /* non-fatal: the card just shows no logo */ }
+
         var version = $"v{UpdateChecker.CurrentVersion.ToString(3)}";
         UpdatesVersionText.Text = $"You're running {version}.";
         AboutVersionText.Text = $"Version {UpdateChecker.CurrentVersion.ToString(3)}";

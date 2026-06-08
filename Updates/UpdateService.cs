@@ -16,6 +16,10 @@ internal sealed class UpdateService : IDisposable
     private readonly Action<UpdateChecker.UpdateInfo> _onUpdateFound;
     private UpdateChecker.UpdateInfo? _pending;
 
+    /// <summary>Whatever the latest background check turned up, or null if none.
+    /// Used by the tray menu to show the "Update to vX.Y.Z" item.</summary>
+    public UpdateChecker.UpdateInfo? PendingUpdate => _pending;
+
     public UpdateService(NotifyIcon tray, Action<UpdateChecker.UpdateInfo> onUpdateFound)
     {
         _tray = tray;

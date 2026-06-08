@@ -268,16 +268,8 @@
                         <Border Style="{StaticResource Card}">
                             <StackPanel Spacing="10">
                                 <StackPanel Orientation="Horizontal" Spacing="14">
-                                    <Border Width="64" Height="64" CornerRadius="14"
-                                            VerticalAlignment="Center">
-                                        <Border.Background>
-                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                                <GradientStop Color="#3A4C82" Offset="0.0" />
-                                                <GradientStop Color="#8DA3D6" Offset="1.0" />
-                                            </LinearGradientBrush>
-                                        </Border.Background>
-                                        <FontIcon Glyph="&#xE744;" FontSize="32" Foreground="White" />
-                                    </Border>
+                                    <Image x:Name="AboutLogo" Width="64" Height="64"
+                                           VerticalAlignment="Center" />
                                     <StackPanel VerticalAlignment="Center" Spacing="2">
                                         <TextBlock Text="Hot Corners for Windows" FontSize="18" FontWeight="SemiBold" />
                                         <TextBlock x:Name="AboutVersionText" Text="Version 0.0.0"

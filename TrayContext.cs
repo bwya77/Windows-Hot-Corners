@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using HotCorners.Overlay;
 using HotCorners.Settings;
+using HotCorners.UI;
 using HotCorners.Updates;
 
 namespace HotCorners;
@@ -61,41 +62,43 @@ internal sealed class TrayContext : ApplicationContext
 
     private ContextMenuStrip BuildMenu()
     {
-        var menu = new ContextMenuStrip();
+        var menu = TrayMenu.Create(
+            getPaused: () => _paused,
+            getUpdate: () =>
+            {
+                var info = _updateService.PendingUpdate;
+                return info != null
+                    ? (true, "v" + info.Latest.ToString(3))
+                    : (false, (string?)null);
+            },
+            onUpdate: () =>
+            {
+                var info = _updateService.PendingUpdate;
+                if (info != null) ShowUpdatePrompt(info);
+            },
+            onSettings: OpenSettings,
+            onTogglePause: () =>
+            {
+                _paused = !_paused;
+                _tray.Text = _paused ? "Hot Corners (paused)" : "Hot Corners";
+                if (_paused) _overlay.Cancel();
+            },
+            onCheckUpdates: async () => await _updateService.CheckAsync(showIfUpToDate: true),
+            onAbout: ShowAbout,
+            onQuit: () => ExitThread(),
+            out _pauseItem);
 
-        var settings = new ToolStripMenuItem("Hot Corners Settings\u2026");
-        settings.Click += (_, _) => OpenSettings();
-        menu.Items.Add(settings);
-
-        _pauseItem = new ToolStripMenuItem("Pause") { CheckOnClick = true };
-        _pauseItem.CheckedChanged += (_, _) =>
-        {
-            _paused = _pauseItem!.Checked;
-            _tray.Text = _paused ? "Hot Corners (paused)" : "Hot Corners";
-            if (_paused) _overlay.Cancel();
-        };
-        menu.Items.Add(_pauseItem);
-
-        menu.Items.Add(new ToolStripSeparator());
-
-        var checkUpdates = new ToolStripMenuItem("Check for Updates\u2026");
-        checkUpdates.Click += async (_, _) => await _updateService.CheckAsync(showIfUpToDate: true);
-        menu.Items.Add(checkUpdates);
-
-        var about = new ToolStripMenuItem("About Hot Corners\u2026");
-        about.Click += (_, _) =>
-        {
-            var v = UpdateChecker.CurrentVersion.ToString(3);
-            MessageBox.Show(
-                $"Hot Corners for Windows\nVersion {v}\n\nMove your cursor into a screen corner to trigger an action.\n\nhttps://github.com/bwya77/Windows-Hot-Corners",
-                "About Hot Corners",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-        };
-        menu.Items.Add(about);
-
-        menu.Items.Add("Exit", null, (_, _) => ExitThread());
         return menu;
+    }
+
+    private static void ShowAbout()
+    {
+        var v = UpdateChecker.CurrentVersion.ToString(3);
+        MessageBox.Show(
+            $"Hot Corners for Windows\nVersion {v}\n\nMove your cursor into a screen corner to trigger an action.\n\nhttps://github.com/bwya77/Windows-Hot-Corners",
+            "About Hot Corners",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     private void OnSettingsChanged(AppSettings updated)

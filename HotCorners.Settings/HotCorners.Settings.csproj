@@ -29,10 +29,15 @@
   </ItemGroup>
 
   <!-- Copy the multi-size icon into Assets\ next to the exe so MainWindow can call
-       AppWindow.SetIcon at runtime (taskbar / Alt-Tab / window thumbnails). -->
+       AppWindow.SetIcon at runtime (taskbar / Alt-Tab / window thumbnails). Also
+       copy the 256-px PNG so the About page can render the actual app icon. -->
   <ItemGroup>
     <Content Include="..\assets\icon.ico">
       <Link>Assets\icon.ico</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\assets\icon-256.png">
+      <Link>Assets\icon-256.png</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
