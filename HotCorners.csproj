@@ -14,6 +14,7 @@
     <Company>bwya77</Company>
     <Copyright>Copyright © 2026 Bradley Wyatt</Copyright>
     <Description>macOS-style hot corners for Windows.</Description>
+    <ApplicationIcon>assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- The standalone WinUI 3 settings app lives in this subfolder of the repo root.
@@ -25,6 +26,16 @@
     <None Remove="HotCorners.Settings\**" />
     <EmbeddedResource Remove="HotCorners.Settings\**" />
     <Content Remove="HotCorners.Settings\**" />
+  </ItemGroup>
+
+  <!-- Embed the tray-optimized icon (16/20/24/32 only) so TrayContext can load it
+       at runtime without depending on extracted files. ApplicationIcon above wires
+       the full multi-size icon.ico into the exe's icon resource so File Explorer,
+       the Start menu, Alt-Tab, and the installer's UninstallDisplayIcon all see it. -->
+  <ItemGroup>
+    <EmbeddedResource Include="assets\icon-tray.ico">
+      <LogicalName>HotCorners.icon-tray.ico</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

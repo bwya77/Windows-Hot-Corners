@@ -36,7 +36,7 @@ internal sealed class TrayContext : ApplicationContext
 
         _tray = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = LoadTrayIcon(),
             Text = "Hot Corners",
             Visible = true,
             ContextMenuStrip = BuildMenu(),
@@ -296,6 +296,22 @@ internal sealed class TrayContext : ApplicationContext
             if (!topSide && ob.Top < b.Bottom && ob.Bottom > b.Bottom) return true;
         }
         return false;
+    }
+
+    /// <summary>Load the embedded tray icon (multi-size .ico) and let GDI+ pick the
+    /// best fit for the system's small-icon dimensions. Falls back to the generic
+    /// SystemIcons.Application if the embedded resource ever goes missing.</summary>
+    private static Icon LoadTrayIcon()
+    {
+        try
+        {
+            using var stream = typeof(TrayContext).Assembly
+                .GetManifestResourceStream("HotCorners.icon-tray.ico");
+            if (stream != null)
+                return new Icon(stream, SystemInformation.SmallIconSize);
+        }
+        catch { /* fall through to default */ }
+        return SystemIcons.Application;
     }
 
     protected override void Dispose(bool disposing)

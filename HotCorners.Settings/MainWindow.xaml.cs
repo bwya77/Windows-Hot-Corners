@@ -47,6 +47,12 @@ public sealed partial class MainWindow : Window
         ResizeForDpi(1060, 780);
         EnforceMinimumSize(960, 580);
 
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico");
+        if (File.Exists(iconPath))
+        {
+            try { AppWindow.SetIcon(iconPath); } catch { /* best effort */ }
+        }
+
         var version = $"v{UpdateChecker.CurrentVersion.ToString(3)}";
         UpdatesVersionText.Text = $"You're running {version}.";
         AboutVersionText.Text = $"Version {UpdateChecker.CurrentVersion.ToString(3)}";

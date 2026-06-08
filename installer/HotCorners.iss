@@ -31,6 +31,7 @@ DefaultDirName={autopf}\Hot Corners
 DefaultGroupName=Hot Corners
 DisableProgramGroupPage=yes
 DisableDirPage=auto
+SetupIconFile=..\assets\icon.ico
 UninstallDisplayIcon={app}\HotCorners.exe
 UninstallDisplayName=Hot Corners
 OutputBaseFilename=HotCornersSetup-{#AppVersion}-win-{#Arch}
