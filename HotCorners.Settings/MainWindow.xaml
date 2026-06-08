@@ -71,11 +71,15 @@
                                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1"
-                                Padding="36,28">
+                                Padding="22,20">
                             <Grid x:Name="ScreenPreview" Width="640" Height="360">
-                                <Border CornerRadius="14"
+                                <Border x:Name="ScreenBackground"
+                                        CornerRadius="14"
                                         BorderThickness="1"
                                         BorderBrush="{ThemeResource ControlElevationBorderBrush}">
+                                    <!-- Default gradient is the fallback; MainWindow.xaml.cs
+                                         swaps in the user's actual desktop wallpaper on launch
+                                         and whenever the window regains focus. -->
                                     <Border.Background>
                                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                             <GradientStop Color="#3A4C82" Offset="0.0" />

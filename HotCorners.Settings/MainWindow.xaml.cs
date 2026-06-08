@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using HotCorners;
 using HotCorners.Settings;
 using HotCorners.Updates;
@@ -6,8 +9,10 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.Graphics;
+using Windows.Storage.Streams;
 using Windows.UI;
 using WinRT.Interop;
 
@@ -36,8 +41,11 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        ResizeForDpi(960, 760);
-        EnforceMinimumSize(640, 560);
+        // 640 px preview + 22 px card padding × 2 + 28 px outer margin × 2 + 190 px nav pane
+        // + ~24 px chrome ≈ 980 px minimum to render the corners uncropped. Default a bit
+        // wider so it doesn't sit flush against the edges.
+        ResizeForDpi(1060, 780);
+        EnforceMinimumSize(960, 580);
 
         var version = $"v{UpdateChecker.CurrentVersion.ToString(3)}";
         UpdatesVersionText.Text = $"You're running {version}.";
@@ -57,6 +65,15 @@ public sealed partial class MainWindow : Window
 
         UpdateCaptionButtonColors();
         RootGrid.ActualThemeChanged += (_, _) => UpdateCaptionButtonColors();
+
+        _ = TryLoadWallpaperAsync();
+        // The wallpaper file path changes when the user changes their background
+        // (Settings → Personalization), so refresh whenever the window regains focus.
+        Activated += (_, e) =>
+        {
+            if (e.WindowActivationState != WindowActivationState.Deactivated)
+                _ = TryLoadWallpaperAsync();
+        };
     }
 
     // ---- Layout helpers ---------------------------------------------------
@@ -107,8 +124,82 @@ public sealed partial class MainWindow : Window
         catch { /* AppWindow customization is best-effort across builds */ }
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    // ---- Wallpaper preview ------------------------------------------------
+
+    private const uint SPI_GETDESKWALLPAPER = 0x0073;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, StringBuilder pvParam, uint fWinIni);
+
+    /// <summary>Returns the path of the current desktop wallpaper image, or null if
+    /// it can't be determined. Windows always exposes the active background as a
+    /// flat image file (Spotlight, Themes, and per-monitor wallpapers all roll up
+    /// to a single SPI_GETDESKWALLPAPER value).</summary>
+    private static string? GetCurrentWallpaperPath()
+    {
+        try
+        {
+            var sb = new StringBuilder(520);
+            if (SystemParametersInfo(SPI_GETDESKWALLPAPER, (uint)sb.Capacity, sb, 0))
+            {
+                var path = sb.ToString();
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                    return path;
+            }
+        }
+        catch { /* SPI is best-effort; we'll fall back to the gradient. */ }
+        return null;
+    }
+
+    private string? _lastWallpaperPath;
+
+    private async Task TryLoadWallpaperAsync()
+    {
+        var path = GetCurrentWallpaperPath();
+        if (path == null || string.Equals(path, _lastWallpaperPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        try
+        {
+            // The wallpaper file (especially TranscodedWallpaper) is sometimes held
+            // exclusively by Windows. Copy bytes into a memory stream first, then
+            // hand a WinRT-compatible random access stream to BitmapImage.
+            byte[] bytes;
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var ms = new MemoryStream())
+            {
+                await fs.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+
+            var stream = new InMemoryRandomAccessStream();
+            using (var writer = new DataWriter(stream.GetOutputStreamAt(0)))
+            {
+                writer.WriteBytes(bytes);
+                await writer.StoreAsync();
+                await writer.FlushAsync();
+                writer.DetachStream();
+            }
+            stream.Seek(0);
+
+            var bmp = new BitmapImage();
+            await bmp.SetSourceAsync(stream);
+
+            ScreenBackground.Background = new ImageBrush
+            {
+                ImageSource = bmp,
+                Stretch = Stretch.UniformToFill,
+            };
+            _lastWallpaperPath = path;
+        }
+        catch
+        {
+            // Keep the fallback gradient on any decode/IO failure.
+        }
+    }
 
     // ---- Navigation -------------------------------------------------------
 
