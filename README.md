@@ -9,6 +9,7 @@ macOS-style **Hot Corners** for Windows. Move your cursor into any corner of you
 <br clear="left" />
 
 <p align="left">
+  <a href="https://bwya77.github.io/Windows-Hot-Corners/"><img src="https://img.shields.io/badge/website-bwya77.github.io%2FWindows--Hot--Corners-2563eb?logo=github" alt="Website" /></a>
   <a href="https://github.com/bwya77/Windows-Hot-Corners/releases/latest"><img src="https://img.shields.io/github/v/release/bwya77/Windows-Hot-Corners?label=download&color=2563eb&logo=github" alt="Latest release" /></a>
   <a href="https://github.com/bwya77/Windows-Hot-Corners/releases"><img src="https://img.shields.io/github/downloads/bwya77/Windows-Hot-Corners/total?color=2563eb&logo=github" alt="Total downloads" /></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-2563eb?logo=windows" alt="Windows 10 and 11" />

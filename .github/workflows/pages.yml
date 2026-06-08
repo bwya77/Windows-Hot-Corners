@@ -1,0 +1,62 @@
+name: Deploy GitHub Pages
+
+# Publishes site/ to GitHub Pages. First-time setup: in the repo settings
+# under "Pages", set Source = "GitHub Actions". After that, every push to main
+# that touches site/, .github/workflows/pages.yml, or assets/ re-deploys.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'assets/**'
+      - 'docs/screenshot-corners.png'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Refresh site assets from canonical sources
+        # Keep the landing page's images in lockstep with the app's real assets and the
+        # README screenshot. Avoids drift if someone updates the icon or screenshot but
+        # forgets to copy it into site/assets/.
+        run: |
+          mkdir -p site/assets
+          cp assets/icon-256.png             site/assets/icon-256.png
+          cp assets/icon-128.png             site/assets/icon-128.png
+          cp assets/icon-32.png              site/assets/icon-32.png
+          cp assets/icon-32.png              site/assets/favicon-32.png
+          cp docs/screenshot-corners.png     site/assets/screenshot-corners.png
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

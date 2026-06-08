@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Hot Corners for Windows</title>
+  <meta name="description" content="macOS-style hot corners for Windows. Move your cursor into a corner of your screen and a configurable action fires. Free, open source, code-signed." />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Hot Corners for Windows" />
+  <meta property="og:description" content="macOS-style hot corners for Windows. Move your cursor into a corner, and a configurable action fires." />
+  <meta property="og:image" content="assets/screenshot-corners.png" />
+  <meta property="og:url" content="https://bwya77.github.io/Windows-Hot-Corners/" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f7f8fb" media="(prefers-color-scheme: light)" />
+
+  <link rel="icon" type="image/png" href="assets/favicon-32.png" />
+  <link rel="apple-touch-icon" href="assets/icon-128.png" />
+
+  <link rel="preconnect" href="https://api.github.com" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Hot Corners home">
+      <img src="assets/icon-32.png" srcset="assets/icon-128.png 2x" alt="" width="28" height="28" />
+      <span>Hot Corners</span>
+    </a>
+    <nav class="site-nav">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#trust">Privacy</a>
+      <a href="https://github.com/bwya77/Windows-Hot-Corners" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+
+    <section class="hero">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="dot"></span> v<span id="version">0.4.6</span> &nbsp;&middot;&nbsp; Code-signed</p>
+          <h1>macOS hot corners,<br /><span class="accent">native on Windows.</span></h1>
+          <p class="lede">
+            Slide your cursor into any corner of your screen and a configurable action fires.
+            Task View, Show Desktop, virtual desktops, lock screen, and more. No subscriptions,
+            no telemetry, no .NET runtime to install.
+          </p>
+
+          <div class="cta-row">
+            <a id="download-primary" class="btn btn-primary" href="https://github.com/bwya77/Windows-Hot-Corners/releases/latest">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 1.4-1.42L11 13.6V4a1 1 0 0 1 1-1zM5 19a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1z"/></svg>
+              <span>Download for Windows</span>
+              <span class="btn-sub" id="download-sub">latest release</span>
+            </a>
+            <a id="download-arm" class="btn btn-ghost" href="https://github.com/bwya77/Windows-Hot-Corners/releases/latest">
+              ARM64 build
+            </a>
+          </div>
+
+          <p class="microcopy">
+            Works on Windows 10 and Windows 11. Roughly 80 MB installed.
+            Signed by Bradley Wyatt so SmartScreen stays quiet.
+          </p>
+        </div>
+
+        <div class="hero-art" aria-hidden="true">
+          <div class="frame">
+            <div class="corner tl"><div class="puddle"></div></div>
+            <div class="corner tr"><div class="puddle"></div></div>
+            <div class="corner bl"><div class="puddle"></div></div>
+            <div class="corner br"><div class="puddle"></div></div>
+            <div class="cursor"></div>
+            <div class="frame-label">Top-left: Task View</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="screenshot">
+      <figure>
+        <img src="assets/screenshot-corners.png" alt="Hot Corners settings window showing four corner dropdowns over a screen-shaped preview." />
+        <figcaption>A familiar, screen-shaped settings window. Pick what each corner should do. Changes save instantly.</figcaption>
+      </figure>
+    </section>
+
+    <section id="features" class="features">
+      <h2>Built to feel like part of Windows</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="card-ico ico-corner"></div>
+          <h3>Four corners, fourteen actions</h3>
+          <p>Open Task View, Show Desktop, Quick Settings, Notification Center, Search, Widgets, lock the PC, snap windows, switch virtual desktops, or put the display to sleep.</p>
+        </article>
+        <article class="card">
+          <div class="card-ico ico-bloom"></div>
+          <h3>A soft puddle bloom</h3>
+          <p>A translucent quarter-circle gently fades in while you hold the corner, then blooms out when the action fires. Theme-aware and click-through.</p>
+        </article>
+        <article class="card">
+          <div class="card-ico ico-monitors"></div>
+          <h3>Multi-monitor smarts</h3>
+          <p>Arms every display, or just your primary. Internal corners between monitors stay inert, the same way macOS hot corners behave.</p>
+        </article>
+        <article class="card">
+          <div class="card-ico ico-game"></div>
+          <h3>Stays out of the way</h3>
+          <p>Suppresses while a true full-screen app is in the foreground, so you won't open Task View mid-game.</p>
+        </article>
+        <article class="card">
+          <div class="card-ico ico-update"></div>
+          <h3>Updates itself</h3>
+          <p>Checks GitHub for new versions in the background and offers to install in place. SmartScreen stays quiet thanks to Azure Trusted Signing.</p>
+        </article>
+        <article class="card">
+          <div class="card-ico ico-lock"></div>
+          <h3>Yours, on your PC</h3>
+          <p>No telemetry, no accounts, no servers. Open source under the MIT license.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="how" class="how">
+      <h2>Get going in three clicks</h2>
+      <ol class="steps">
+        <li>
+          <span class="step-num">1</span>
+          <h3>Download</h3>
+          <p>Grab the installer from the <a href="https://github.com/bwya77/Windows-Hot-Corners/releases/latest" target="_blank" rel="noopener">latest release</a>. Pick the x64 build for a standard PC or the ARM64 build for a Surface Pro X or Snapdragon laptop.</p>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <h3>Run the installer</h3>
+          <p>Double-click. Accept the UAC prompt. The installer adds Hot Corners to Start with Windows and drops the tray icon next to your clock.</p>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <h3>Pick your corners</h3>
+          <p>Double-click the tray icon to open the settings window. Pick an action for any of the four corners. Done.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="trust" class="trust">
+      <div class="trust-card">
+        <h2>Privacy and trust</h2>
+        <ul>
+          <li><strong>No telemetry.</strong> Hot Corners runs entirely on your PC and never phones home with usage data.</li>
+          <li><strong>One network call,</strong> to <code>api.github.com</code>, to check whether a new release is out.</li>
+          <li><strong>Signed.</strong> Every release is code-signed with Azure Trusted Signing under the publisher identity <em>Bradley Wyatt</em>.</li>
+          <li><strong>Verifiable.</strong> Each release ships a SLSA build provenance attestation through GitHub. See <a href="https://github.com/bwya77/Windows-Hot-Corners/blob/main/SIGNING.md" target="_blank" rel="noopener">SIGNING.md</a>.</li>
+          <li><strong>Open source.</strong> Full source under the <a href="https://github.com/bwya77/Windows-Hot-Corners/blob/main/LICENSE" target="_blank" rel="noopener">MIT license</a>.</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="foot-brand">
+        <img src="assets/icon-32.png" width="20" height="20" alt="" />
+        <span>Hot Corners</span>
+      </div>
+      <nav class="foot-links">
+        <a href="https://github.com/bwya77/Windows-Hot-Corners" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/bwya77/Windows-Hot-Corners/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/bwya77/Windows-Hot-Corners/issues" target="_blank" rel="noopener">Report a bug</a>
+        <a href="https://github.com/bwya77/Windows-Hot-Corners/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+      </nav>
+      <p class="copyright">&copy; <span id="year">2026</span> Bradley Wyatt</p>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
