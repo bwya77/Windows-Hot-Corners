@@ -1,0 +1,21 @@
+## Build artifacts
+bin/
+obj/
+publish/
+out/
+
+## Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+## Misc
+*.log
+*.tmp
+*.bak
+Thumbs.db
+.DS_Store

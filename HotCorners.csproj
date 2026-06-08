@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HotCorners</RootNamespace>
+    <AssemblyName>HotCorners</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.2.0</Version>
+    <FileVersion>0.2.0.0</FileVersion>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <Product>Hot Corners</Product>
+    <AssemblyTitle>Hot Corners for Windows</AssemblyTitle>
+    <Company>bwya77</Company>
+    <Copyright>Copyright © 2026 Bradley Wyatt</Copyright>
+    <Description>macOS-style hot corners for Windows.</Description>
+  </PropertyGroup>
+
+</Project>
