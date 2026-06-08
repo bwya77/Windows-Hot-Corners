@@ -27,3 +27,11 @@ public enum HotAction
     MinimizeAll,         // Win+M
     SleepDisplays,       // Monitor off
 }
+
+public enum MultiMonitorMode
+{
+    /// <summary>Every connected display has its own outer corners armed (default).</summary>
+    AllMonitors,
+    /// <summary>Only the Windows primary display fires hot corners; the others are inert.</summary>
+    PrimaryOnly,
+}

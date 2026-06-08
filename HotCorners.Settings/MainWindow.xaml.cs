@@ -247,6 +247,8 @@ public sealed partial class MainWindow : Window
 
             SuppressFullscreenToggle.IsOn = s.SuppressInFullscreen;
             LaunchAtLoginToggle.IsOn = s.LaunchAtLogin;
+            ShowOverlayToggle.IsOn = s.ShowCornerOverlay;
+            MonitorModeRadio.SelectedIndex = s.MultiMonitor == MultiMonitorMode.PrimaryOnly ? 1 : 0;
         }
         finally
         {
@@ -308,6 +310,24 @@ public sealed partial class MainWindow : Window
         next.LaunchAtLogin = LaunchAtLoginToggle.IsOn;
         _store.Save(next);
         // The tray app owns the HKCU Run key; it'll mirror this change on the next reload.
+    }
+
+    private void OnShowOverlayToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        var next = _store.Current.Clone();
+        next.ShowCornerOverlay = ShowOverlayToggle.IsOn;
+        _store.Save(next);
+    }
+
+    private void OnMonitorModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        var next = _store.Current.Clone();
+        next.MultiMonitor = MonitorModeRadio.SelectedIndex == 1
+            ? MultiMonitorMode.PrimaryOnly
+            : MultiMonitorMode.AllMonitors;
+        _store.Save(next);
     }
 
     // ---- Updates pane -----------------------------------------------------

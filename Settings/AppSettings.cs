@@ -26,6 +26,19 @@ public sealed class AppSettings
 
     public bool LaunchAtLogin { get; set; } = false;
 
+    /// <summary>
+    /// When true, show a translucent "puddle" overlay in the active corner while the
+    /// cursor is dwelling there, and play a soft ripple when the action fires.
+    /// </summary>
+    public bool ShowCornerOverlay { get; set; } = true;
+
+    /// <summary>
+    /// Controls which monitors fire hot corners. AllMonitors (default) arms every
+    /// connected display's outer corners; PrimaryOnly limits firing to the Windows
+    /// primary display.
+    /// </summary>
+    public MultiMonitorMode MultiMonitor { get; set; } = MultiMonitorMode.AllMonitors;
+
     /// <summary>Ensure every corner has an entry — defends against an older settings file
     /// that pre-dates a newly-added corner enum value.</summary>
     public void Normalize()
@@ -45,6 +58,8 @@ public sealed class AppSettings
             SuppressInFullscreen = SuppressInFullscreen,
             CooldownMs = CooldownMs,
             LaunchAtLogin = LaunchAtLogin,
+            ShowCornerOverlay = ShowCornerOverlay,
+            MultiMonitor = MultiMonitor,
             Bindings = new Dictionary<Corner, HotAction>(Bindings),
         };
         return copy;

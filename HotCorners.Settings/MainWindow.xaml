@@ -158,6 +158,40 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" Spacing="2">
+                                    <TextBlock Text="Show corner overlay" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Fade in a translucent puddle in the corner as you dwell there, and ripple it outward when the action fires. Click-through, just like macOS."
+                                               TextWrapping="Wrap"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               Style="{StaticResource CaptionTextBlockStyle}" />
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="1" x:Name="ShowOverlayToggle" Toggled="OnShowOverlayToggled" />
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Monitors" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="Choose which displays have their outer corners armed."
+                                           TextWrapping="Wrap"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Style="{StaticResource CaptionTextBlockStyle}" />
+                                <muxc:RadioButtons x:Name="MonitorModeRadio"
+                                                   MaxColumns="1"
+                                                   Margin="0,6,0,0"
+                                                   SelectionChanged="OnMonitorModeChanged">
+                                    <x:String>All monitors</x:String>
+                                    <x:String>Primary monitor only</x:String>
+                                </muxc:RadioButtons>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="2">
                                     <TextBlock Text="Skip in fullscreen apps" Style="{StaticResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Text="Don't trigger while a fullscreen app (game, full-screen video) is in the foreground. Windows shell — Task View, Start, Search — is exempt."
                                                TextWrapping="Wrap"

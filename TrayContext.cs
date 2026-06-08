@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using HotCorners.Overlay;
 using HotCorners.Settings;
 using HotCorners.Updates;
 
@@ -12,6 +13,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _poll;
     private readonly SettingsStore _store = new();
     private readonly UpdateService _updateService;
+    private readonly OverlayManager _overlay = new();
 
     private AppSettings _settings;
     private DateTime _enteredAt = DateTime.MinValue;
@@ -28,6 +30,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         _uiContext = SynchronizationContext.Current;
         _settings = _store.Current;
+        _overlay.Enabled = _settings.ShowCornerOverlay;
 
         // Reconcile the HKCU Run key on every startup so it always points at the current
         // install path. The tray app stays the single owner of that key — the settings UI
@@ -69,6 +72,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             _paused = _pauseItem!.Checked;
             _tray.Text = _paused ? "Hot Corners (paused)" : "Hot Corners";
+            if (_paused) _overlay.Cancel();
         };
         menu.Items.Add(_pauseItem);
 
@@ -105,6 +109,10 @@ internal sealed class TrayContext : ApplicationContext
             // Mirror the LaunchAtLogin toggle to the HKCU Run key. The settings UI doesn't
             // touch the registry directly; only the tray app does.
             StartupRegistration.Reconcile(updated.LaunchAtLogin);
+
+            // Live-toggle the puddle overlay too.
+            _overlay.Enabled = updated.ShowCornerOverlay;
+            if (!updated.ShowCornerOverlay) _overlay.Cancel();
         }
 
         if (_uiContext != null) _uiContext.Post(_ => apply(), null);
@@ -211,16 +219,30 @@ internal sealed class TrayContext : ApplicationContext
 
     private void OnPoll(object? sender, EventArgs e)
     {
-        if (_paused) return;
+        if (_paused) { _overlay.Cancel(); return; }
         if (!GetCursorPos(out var pt)) return;
 
-        var corner = DetectCorner(pt);
+        var (corner, screen) = DetectCorner(pt, _settings.MultiMonitor);
 
         if (corner != _currentCorner)
         {
             _currentCorner = corner;
             _enteredAt = DateTime.UtcNow;
             _firedForThisEntry = false;
+
+            if (corner == Corner.None || screen == null)
+            {
+                _overlay.Cancel();
+            }
+            else
+            {
+                var action = _settings.Bindings.TryGetValue(corner, out var aNew) ? aNew : HotAction.None;
+                // Only start the puddle for corners that actually do something.
+                if (action == HotAction.None || (_settings.SuppressInFullscreen && Fullscreen.ForegroundIsFullscreen()))
+                    _overlay.Cancel();
+                else
+                    _overlay.BeginDwell(corner, screen.Bounds, _settings.DwellMs);
+            }
             return;
         }
 
@@ -229,25 +251,35 @@ internal sealed class TrayContext : ApplicationContext
         if ((DateTime.UtcNow - _enteredAt).TotalMilliseconds < _settings.DwellMs) return;
         if ((DateTime.UtcNow - _lastFiredAt).TotalMilliseconds < _settings.CooldownMs) return;
 
-        var action = _settings.Bindings.TryGetValue(corner, out var a) ? a : HotAction.None;
-        if (action == HotAction.None) return;
+        var action2 = _settings.Bindings.TryGetValue(corner, out var a) ? a : HotAction.None;
+        if (action2 == HotAction.None) return;
 
-        if (_settings.SuppressInFullscreen && Fullscreen.ForegroundIsFullscreen()) return;
+        if (_settings.SuppressInFullscreen && Fullscreen.ForegroundIsFullscreen())
+        {
+            _overlay.Cancel();
+            return;
+        }
 
         _firedForThisEntry = true;
         _lastFiredAt = DateTime.UtcNow;
-        ActionRunner.Run(action);
+        _overlay.PlayRipple();
+        ActionRunner.Run(action2);
     }
 
     // A corner only counts when the cursor is bumped on BOTH axes — i.e. no neighboring
     // monitor in the relevant direction. This makes "internal" corners between monitors
     // (where the cursor can keep moving) inert, which matches macOS hot-corner behavior.
-    private static Corner DetectCorner(POINT pt)
+    // Returns the matching Screen so the overlay knows which monitor to anchor to.
+    // When mode == PrimaryOnly, only the Windows primary display participates.
+    private static (Corner, Screen?) DetectCorner(POINT pt, MultiMonitorMode mode)
     {
         const int tol = 2;
         var all = Screen.AllScreens;
+        var armed = mode == MultiMonitorMode.PrimaryOnly
+            ? new[] { Screen.PrimaryScreen! }
+            : all;
 
-        foreach (var s in all)
+        foreach (var s in armed)
         {
             var b = s.Bounds;
             var atLeft = pt.X <= b.Left + tol;
@@ -257,17 +289,17 @@ internal sealed class TrayContext : ApplicationContext
 
             if (!((atLeft || atRight) && (atTop || atBottom))) continue;
 
-            var leftBlocked = atLeft && HasNeighborHorizontally(all, s, pt.Y, leftSide: true);
-            var rightBlocked = atRight && HasNeighborHorizontally(all, s, pt.Y, leftSide: false);
-            var topBlocked = atTop && HasNeighborVertically(all, s, pt.X, topSide: true);
-            var bottomBlocked = atBottom && HasNeighborVertically(all, s, pt.X, topSide: false);
+            var leftBlocked = atLeft && HasNeighborHorizontally(armed, s, pt.Y, leftSide: true);
+            var rightBlocked = atRight && HasNeighborHorizontally(armed, s, pt.Y, leftSide: false);
+            var topBlocked = atTop && HasNeighborVertically(armed, s, pt.X, topSide: true);
+            var bottomBlocked = atBottom && HasNeighborVertically(armed, s, pt.X, topSide: false);
 
-            if (atTop && atLeft && !topBlocked && !leftBlocked) return Corner.TopLeft;
-            if (atTop && atRight && !topBlocked && !rightBlocked) return Corner.TopRight;
-            if (atBottom && atLeft && !bottomBlocked && !leftBlocked) return Corner.BottomLeft;
-            if (atBottom && atRight && !bottomBlocked && !rightBlocked) return Corner.BottomRight;
+            if (atTop && atLeft && !topBlocked && !leftBlocked) return (Corner.TopLeft, s);
+            if (atTop && atRight && !topBlocked && !rightBlocked) return (Corner.TopRight, s);
+            if (atBottom && atLeft && !bottomBlocked && !leftBlocked) return (Corner.BottomLeft, s);
+            if (atBottom && atRight && !bottomBlocked && !rightBlocked) return (Corner.BottomRight, s);
         }
-        return Corner.None;
+        return (Corner.None, null);
     }
 
     private static bool HasNeighborHorizontally(Screen[] all, Screen self, int y, bool leftSide)
@@ -323,6 +355,7 @@ internal sealed class TrayContext : ApplicationContext
             _updateService.Dispose();
             _store.Changed -= OnSettingsChanged;
             _store.Dispose();
+            _overlay.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
         }
