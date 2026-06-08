@@ -268,6 +268,20 @@ ul { padding-left: 1.1rem; }
     radial-gradient(50% 50% at 70% 80%, rgba(37, 99, 235, 0.18), transparent 70%);
 }
 
+/* Wallpaper darkens when Task View activates, like the real OS overlay */
+.wallpaper {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0));
+  animation: wallpaper-dim 7s ease-in-out 0.4s infinite;
+  pointer-events: none;
+}
+@keyframes wallpaper-dim {
+  0%, 26% { background-color: rgba(0,0,0,0);   backdrop-filter: blur(0); }
+  34%     { background-color: rgba(0,0,0,0.35); }
+  56%     { background-color: rgba(0,0,0,0.35); }
+  68%, 100% { background-color: rgba(0,0,0,0); }
+}
+
 .corner {
   position: absolute;
   width: 110px; height: 110px;
@@ -294,14 +308,14 @@ ul { padding-left: 1.1rem; }
 
 /* TL corner blooms (chosen as the demo corner) */
 .corner.tl .puddle {
-  animation: bloom 6s ease-in-out 0.6s infinite;
+  animation: bloom 7s ease-in-out 0.4s infinite;
 }
 
 @keyframes bloom {
   0%   { opacity: 0;    transform: scale(0.55); }
   18%  { opacity: 0.85; transform: scale(1.0); }
-  30%  { opacity: 0.85; transform: scale(1.0); }
-  44%  { opacity: 0;    transform: scale(1.18); }
+  26%  { opacity: 0.85; transform: scale(1.0); }
+  36%  { opacity: 0;    transform: scale(1.18); }
   100% { opacity: 0;    transform: scale(1.18); }
 }
 
@@ -312,14 +326,127 @@ ul { padding-left: 1.1rem; }
   background: #fff;
   clip-path: polygon(0 0, 100% 70%, 60% 70%, 80% 100%, 60% 110%, 40% 80%, 0 100%);
   filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
-  animation: cursor-glide 6s ease-in-out 0s infinite;
+  z-index: 4;
+  animation: cursor-glide 7s ease-in-out 0s infinite;
 }
 @keyframes cursor-glide {
   0%   { top: 60%; left: 60%; opacity: 0.95; }
-  20%  { top: 4%;  left: 4%;  opacity: 0.95; }
-  44%  { top: 4%;  left: 4%;  opacity: 0.95; }
-  64%  { top: 60%; left: 60%; opacity: 0.95; }
+  18%  { top: 4%;  left: 4%;  opacity: 0.95; }
+  56%  { top: 4%;  left: 4%;  opacity: 0.95; }
+  72%  { top: 60%; left: 60%; opacity: 0.95; }
   100% { top: 60%; left: 60%; opacity: 0.95; }
+}
+
+/* ---- Task View popup ---- */
+
+.taskview {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 10%;
+  padding: 14% 12%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.tv-card {
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(240,245,255,0.92));
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.4) inset;
+  border: 1px solid rgba(255,255,255,0.15);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(14px) scale(0.88);
+}
+
+.tv-title {
+  height: 14px;
+  background: linear-gradient(180deg, #f3f4f6, #e5e7eb);
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 4px;
+}
+.tv-dot { width: 6px; height: 6px; border-radius: 50%; }
+.tv-r { background: #fb7185; }
+.tv-y { background: #fbbf24; }
+.tv-g { background: #34d399; }
+
+.tv-body { flex: 1; }
+.tv-body-1 {
+  /* file explorer-ish: sidebar + grid */
+  background:
+    linear-gradient(90deg, #e2e8f0 28%, transparent 28%),
+    repeating-linear-gradient(0deg, transparent 0 14px, rgba(15,23,42,0.06) 14px 16px),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+}
+.tv-body-2 {
+  /* code editor-ish: lines */
+  background:
+    linear-gradient(180deg, #0f172a 0 14px, #1e293b 14px 100%);
+  position: relative;
+}
+.tv-body-2::after {
+  content: "";
+  position: absolute; inset: 18px 12px 12px;
+  background:
+    repeating-linear-gradient(180deg,
+      rgba(96,165,250,0.65) 0 2px, transparent 2px 7px,
+      rgba(244,114,182,0.65) 7px 9px, transparent 9px 14px,
+      rgba(52,211,153,0.65) 14px 16px, transparent 16px 21px,
+      rgba(251,191,36,0.55) 21px 23px, transparent 23px 28px);
+  background-size: 60% 100%;
+  background-repeat: no-repeat;
+}
+.tv-body-3 {
+  /* browser-ish: header band + content */
+  background:
+    linear-gradient(180deg, #fef3c7 0 18px, transparent 18px),
+    linear-gradient(180deg, #ffffff, #fafafa);
+  position: relative;
+}
+.tv-body-3::after {
+  content: "";
+  position: absolute; inset: 26px 14px 12px;
+  background:
+    linear-gradient(180deg, #3b82f6 0 8px, transparent 8px),
+    linear-gradient(180deg, transparent 14px, #cbd5e1 14px 16px, transparent 16px 24px,
+                            #cbd5e1 24px 26px, transparent 26px 34px,
+                            #cbd5e1 34px 36px);
+}
+.tv-body-4 {
+  /* settings-ish: blue card */
+  background:
+    radial-gradient(80% 100% at 30% 20%, rgba(37,99,235,0.85), rgba(29,78,216,0.95)),
+    #1d4ed8;
+  position: relative;
+}
+.tv-body-4::after {
+  content: "";
+  position: absolute; inset: 14px 14px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.85) 0 5px, transparent 5px 12px,
+                            rgba(255,255,255,0.45) 12px 14px, transparent 14px 22px,
+                            rgba(255,255,255,0.45) 22px 24px);
+}
+
+/* Stagger card entrance, then hold, then exit, synced with bloom */
+.tv-1 { animation: tv-pop 7s ease-out 0.4s infinite; animation-delay: calc(0.4s + 0.00s); }
+.tv-2 { animation: tv-pop 7s ease-out 0.4s infinite; animation-delay: calc(0.4s + 0.06s); }
+.tv-3 { animation: tv-pop 7s ease-out 0.4s infinite; animation-delay: calc(0.4s + 0.12s); }
+.tv-4 { animation: tv-pop 7s ease-out 0.4s infinite; animation-delay: calc(0.4s + 0.18s); }
+
+@keyframes tv-pop {
+  0%, 24%  { opacity: 0; transform: translateY(14px) scale(0.88); }
+  32%      { opacity: 1; transform: translateY(0)    scale(1.00); }
+  58%      { opacity: 1; transform: translateY(0)    scale(1.00); }
+  68%      { opacity: 0; transform: translateY(6px)  scale(0.94); }
+  100%     { opacity: 0; transform: translateY(6px)  scale(0.94); }
 }
 
 .frame-label {
@@ -338,6 +465,8 @@ ul { padding-left: 1.1rem; }
 @media (prefers-reduced-motion: reduce) {
   .corner.tl .puddle { animation: none; opacity: 0.85; transform: scale(1); }
   .cursor { animation: none; top: 12%; left: 12%; }
+  .tv-1, .tv-2, .tv-3, .tv-4 { animation: none; opacity: 1; transform: none; }
+  .wallpaper { animation: none; background: rgba(0,0,0,0.35); }
 }
 
 /* --------------------- Screenshot -------------------------- */
