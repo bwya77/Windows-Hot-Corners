@@ -18,7 +18,7 @@ public sealed class AppSettings
         [Corner.BottomRight] = HotAction.None,
     };
 
-    public int DwellMs { get; set; } = 150;
+    public int DwellMs { get; set; } = 25;
 
     public bool SuppressInFullscreen { get; set; } = true;
 

@@ -4,160 +4,95 @@
   <img src="assets/icon-128.png" width="96" alt="Hot Corners icon" align="left" hspace="14" />
 </p>
 
-macOS-style **Hot Corners** for Windows. Move your cursor into a corner of your
-screen, hold it briefly, and a configurable action fires — Task View, Show
-Desktop, virtual desktop switching, lock screen, and more.
-
-Native tray app written in C# / .NET 8 — WinForms tray icon plus a
-WinUI 3 settings window. **Code-signed** with Azure Trusted Signing so
-Windows SmartScreen doesn't warn on download. No runtime to install.
+macOS-style **Hot Corners** for Windows. Move your cursor into any corner of your screen, hold it for a moment, and your favorite action fires. Open Task View, Show Desktop, switch virtual desktops, lock your PC, and more.
 
 <br clear="left" />
 
-![Hot Corners settings — Corners pane](docs/screenshot-corners.png)
+<p align="left">
+  <a href="https://github.com/bwya77/Windows-Hot-Corners/releases/latest"><img src="https://img.shields.io/github/v/release/bwya77/Windows-Hot-Corners?label=download&color=2563eb&logo=github" alt="Latest release" /></a>
+  <a href="https://github.com/bwya77/Windows-Hot-Corners/releases"><img src="https://img.shields.io/github/downloads/bwya77/Windows-Hot-Corners/total?color=2563eb&logo=github" alt="Total downloads" /></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-2563eb?logo=windows" alt="Windows 10 and 11" />
+  <img src="https://img.shields.io/badge/arch-x64%20%7C%20arm64-2563eb" alt="x64 and arm64" />
+  <img src="https://img.shields.io/badge/signed-Azure%20Trusted%20Signing-2563eb?logo=azurepipelines" alt="Code signed" />
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/bwya77/Windows-Hot-Corners?color=2563eb" alt="MIT license" /></a>
+</p>
+
+![Hot Corners settings, Corners pane](docs/screenshot-corners.png)
 
 ---
 
 ## Install
 
-### One-line install (recommended)
+1. Go to the [latest release](https://github.com/bwya77/Windows-Hot-Corners/releases/latest).
+2. Download the installer for your PC:
+   * **HotCornersSetup-x.y.z-win-x64.exe** for most Windows PCs.
+   * **HotCornersSetup-x.y.z-win-arm64.exe** for ARM laptops like the Surface Pro X or Copilot+ PCs with Snapdragon chips.
+3. Double-click the installer and follow the prompts.
 
-Open PowerShell and run:
+That's it. Hot Corners installs into Program Files, adds itself to **Start with Windows**, and shows up in your system tray. There's no .NET runtime to install. SmartScreen will not warn you because every release is code-signed.
 
-```powershell
-irm https://raw.githubusercontent.com/bwya77/Windows-Hot-Corners/main/install.ps1 | iex
-```
-
-This downloads the latest Hot Corners installer from GitHub Releases and runs
-it with a UAC prompt. The installer drops Hot Corners into
-`C:\Program Files\Hot Corners`, registers a clean entry in **Apps & Features**,
-opts in to **Start with Windows**, and launches the tray app. **No .NET
-runtime required** — the binary is self-contained.
-
-Hot Corners checks GitHub for new versions in the background and prompts you to
-install them in-place (you'll see a UAC prompt during the update).
-
-### Manual install
-
-1. Go to [Releases](https://github.com/bwya77/Windows-Hot-Corners/releases/latest).
-2. Download `HotCornersSetup-<version>-win-x64.exe` (or `-win-arm64.exe` for ARM PCs).
-3. Run it. The installer takes care of the rest.
+When a new version is out, Hot Corners notifies you in the tray and updates itself in place.
 
 ### Uninstall
 
-Either use **Apps & Features** → **Hot Corners** → **Uninstall**, or run:
-
-```powershell
-irm https://raw.githubusercontent.com/bwya77/Windows-Hot-Corners/main/uninstall.ps1 | iex
-```
-
-Your settings live at `%AppData%\HotCorners\settings.json` and are preserved
-across uninstall/reinstall. Pass `-PurgeSettings` to the uninstall script (or
-delete the folder manually) to clear them too.
+Open **Settings**, then **Apps**, find **Hot Corners**, and click **Uninstall**. Your preferences are kept so you don't lose your corner setup if you reinstall later.
 
 ---
 
 ## Use it
 
-**Right-click the tray icon** (or double-click it) → **Hot Corners Settings…**
+After install, look for the Hot Corners icon in your system tray (bottom-right of the screen, near the clock; you may need to click the small "show hidden icons" arrow first).
 
-You get a macOS-style settings window with four corner dropdowns over a
-screen-shaped preview. Pick an action for any corner. Settings save instantly.
+* **Double-click** the tray icon to open the settings window.
+* **Right-click** the tray icon for a quick menu (Settings, Pause, Check for updates, About, Exit).
 
-**Default binding:** top-left corner → Task View (Win+Tab).
+The settings window shows a screen-shaped preview with a dropdown for each of the four corners. Pick what you want each corner to do. Changes save instantly.
 
-### Available actions
+**Default setup:** the top-left corner opens Task View, the same way it does on a Mac.
 
-| Action | What it does |
+### What each corner can do
+
+| Action | What happens |
 |---|---|
-| Task View | Win+Tab — opens (or closes) Task View |
-| Show Desktop | Win+D — toggles desktop |
-| Quick Settings | Win+A |
-| Notification Center | Win+N |
-| Start Menu | Win |
-| Search | Win+S |
-| Widgets | Win+W |
-| Lock Screen | Win+L |
-| Previous Desktop | Ctrl+Win+← |
-| Next Desktop | Ctrl+Win+→ |
-| Snap Window Left | Win+← |
-| Snap Window Right | Win+→ |
-| Minimize All | Win+M |
-| Put Display to Sleep | Tells the system to power-off the displays |
+| Task View | Opens the Windows task switcher (also closes it if it's already open) |
+| Show Desktop | Minimizes everything so you can see your desktop |
+| Quick Settings | Opens the Wi-Fi, volume, and brightness flyout |
+| Notification Center | Opens your notifications and calendar |
+| Start Menu | Opens the Start menu |
+| Search | Opens Windows Search |
+| Widgets | Opens the Widgets panel |
+| Lock Screen | Locks your PC |
+| Previous Desktop | Switches one virtual desktop to the left |
+| Next Desktop | Switches one virtual desktop to the right |
+| Snap Window Left | Snaps the active window to the left half of the screen |
+| Snap Window Right | Snaps the active window to the right half of the screen |
+| Minimize All | Minimizes every open window |
+| Put Display to Sleep | Turns the display off (handy on a laptop) |
 
-### Tunables
+### Settings you can tweak
 
-- **Dwell time** (25–600 ms): how long the cursor must rest in a corner before
-  firing. Default 150 ms. Drop to 25–50 ms if you want it nearly instant; bump
-  to 250+ ms if you trigger by accident.
-- **Show corner overlay**: fades a soft translucent quarter-circle "puddle"
-  into the corner as you dwell, and gently grows + fades it out when the action
-  fires. Click-through and theme-aware (white-blue on dark wallpapers, deep
-  slate-blue on light). Default on.
-- **Monitors**: choose **All monitors** (every connected display arms its
-  outer corners) or **Primary monitor only** (other displays are inert). In
-  primary-only mode the inter-monitor neighbor check is also scoped to the
-  primary, so its corners stay armed even when sandwiched by other displays.
-- **Suppress in fullscreen apps**: skips firing while a true fullscreen app
-  (game, full-screen video) is in the foreground. The Windows shell — Task View,
-  Start, Search — is exempt, so you can still re-trigger a corner to toggle
-  those off.
+* **Dwell time:** how long you have to hold the cursor in a corner before it fires. The default of 25 milliseconds feels nearly instant. Raise it if you keep firing corners by accident, lower it for the snappiest possible response.
+* **Corner overlay:** a soft, translucent puddle blooms into the corner as you hold the cursor there, then gently fades out when the action fires. It adapts to your Windows theme (light puddle on dark wallpapers, dark puddle on light ones) and clicks pass right through it. On by default.
+* **Monitors:** choose whether all of your displays have hot corners, or only your primary monitor.
+* **Suppress in full-screen apps:** skip firing while a real full-screen app such as a game or a full-screen video is in the foreground, so you don't accidentally open Task View mid-match.
+* **Start with Windows:** Hot Corners launches automatically when you sign in. On by default.
+* **Pause:** turn the corners off temporarily without quitting the app. Handy when you're doing fine work near a corner.
 
 ---
 
-## How corner detection works
+## How corner detection works (in plain English)
 
-A corner only fires when the cursor is bumped on **both** axes — i.e. there's
-no neighboring monitor in either direction. This makes the "internal" corners
-between adjacent monitors inert (the cursor can keep moving onto the other
-display, so it isn't a true bump). Same behavior as macOS hot corners.
-
-Cursor position is polled at ~66 Hz with a configurable dwell timer, plus a
-500 ms cooldown to prevent double-fires.
+A corner only fires when your cursor actually bumps into the screen on **both** axes, meaning there's nowhere else for it to go. If you have a second monitor sitting to the right of your main one, the cursor can slide off the right edge onto that monitor, so the right corners of the main monitor are inert. The same rule that macOS uses, so it feels natural.
 
 ---
 
-## Build from source
+## Privacy and trust
 
-Requires .NET 8 SDK.
-
-```powershell
-git clone https://github.com/bwya77/Windows-Hot-Corners.git
-cd Windows-Hot-Corners
-dotnet run -c Release
-```
-
-### Publish a self-contained single-file exe
-
-```powershell
-dotnet publish -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true `
-  -p:DebugType=embedded `
-  -p:PublishReadyToRun=true `
-  -o publish\x64
-```
-
-The resulting `publish\x64\HotCorners.exe` has no external dependencies — copy
-it anywhere and run.
-
----
-
-## Code signing
-
-Releases are signed with **Azure Trusted Signing** (Public Trust, Individual
-Developer identity bound to the publisher) so Windows SmartScreen stops
-warning on download and on launch-at-login. Each release also ships a signed
-SLSA build provenance attestation you can verify with:
-
-```powershell
-gh attestation verify .\HotCornersSetup-<version>-win-x64.exe `
-    --repo bwya77/Windows-Hot-Corners
-```
-
-See [SIGNING.md](SIGNING.md) for the full setup and the per-repo
-secrets/variables.
+* Hot Corners runs entirely on your PC. It does not collect telemetry, analytics, or any personal data.
+* The only network call it makes is a periodic check to **api.github.com** to see whether a new release is available.
+* Every release is signed with **Azure Trusted Signing** under the publisher identity *Bradley Wyatt*, so Windows can verify it came from a known author and hasn't been tampered with.
+* Every release also publishes a SLSA build provenance attestation through GitHub. If you're security-conscious you can verify it yourself with the GitHub CLI (see [SIGNING.md](SIGNING.md)).
+* The full source code is in this repository under the [MIT license](LICENSE).
 
 ---
 
