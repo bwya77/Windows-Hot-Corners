@@ -4,9 +4,10 @@
     Uninstalls Hot Corners for Windows.
 
 .DESCRIPTION
-    Stops the running process, removes the install directory, and removes the
-    Run-at-login registry value. User settings at %AppData%\HotCorners are
-    preserved unless -PurgeSettings is specified.
+    Runs the installer's silent uninstaller (registered in Apps & Features).
+    Also cleans up any legacy %LocalAppData%\Programs\HotCorners install left
+    over from older script-based installations. User settings at
+    %AppData%\HotCorners are preserved unless -PurgeSettings is specified.
 
 .PARAMETER PurgeSettings
     Also delete user settings at %AppData%\HotCorners.
@@ -21,28 +22,47 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$installDir = Join-Path $env:LOCALAPPDATA 'Programs\HotCorners'
 $settingsDir = Join-Path $env:APPDATA 'HotCorners'
-$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
 Write-Host ""
 Write-Host "Uninstalling Hot Corners..." -ForegroundColor Cyan
 
+# --- Stop running app -----------------------------------------------------
 Get-Process -Name HotCorners -ErrorAction SilentlyContinue | ForEach-Object {
     Stop-Process -Id $_.Id -Force
 }
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 400
 
-if (Test-Path $installDir) {
-    Remove-Item $installDir -Recurse -Force
-    Write-Host "Removed $installDir"
+# --- Run Inno Setup uninstaller (Apps & Features entry) -------------------
+$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{4A1D8E7B-6F94-4F2E-A1E1-3D6B9C2A1A6E}_is1'
+$uninstaller = (Get-ItemProperty -Path $uninstallKey -Name 'QuietUninstallString' -ErrorAction SilentlyContinue).QuietUninstallString
+if (-not $uninstaller) {
+    $uninstaller = (Get-ItemProperty -Path $uninstallKey -Name 'UninstallString' -ErrorAction SilentlyContinue).UninstallString
+    if ($uninstaller) { $uninstaller += ' /SILENT' }
 }
 
+if ($uninstaller) {
+    Write-Host "Running registered uninstaller (you'll see a UAC prompt)..." -ForegroundColor Yellow
+    # The registered string already includes the full path + flags. Use cmd to honor it verbatim.
+    Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $uninstaller -Verb RunAs -Wait
+} else {
+    Write-Host "No Inno Setup uninstaller registered." -ForegroundColor Yellow
+}
+
+# --- Clean up legacy script install ---------------------------------------
+$legacyDir = Join-Path $env:LOCALAPPDATA 'Programs\HotCorners'
+if (Test-Path $legacyDir) {
+    Remove-Item $legacyDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Removed legacy install at $legacyDir"
+}
+
+# Belt and suspenders — the installer's CurUninstallStepChanged also does this.
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 if ((Get-ItemProperty -Path $runKey -Name 'HotCorners' -ErrorAction SilentlyContinue)) {
     Remove-ItemProperty -Path $runKey -Name 'HotCorners' -ErrorAction SilentlyContinue
-    Write-Host "Removed autostart registry value"
 }
 
+# --- Settings -------------------------------------------------------------
 if ($PurgeSettings -and (Test-Path $settingsDir)) {
     Remove-Item $settingsDir -Recurse -Force
     Write-Host "Removed settings at $settingsDir"

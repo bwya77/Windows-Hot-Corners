@@ -18,31 +18,32 @@ Open PowerShell and run:
 irm https://raw.githubusercontent.com/bwya77/Windows-Hot-Corners/main/install.ps1 | iex
 ```
 
-This downloads the latest signed-release `HotCorners.exe`, places it in
-`%LocalAppData%\Programs\HotCorners\`, registers it to run at sign-in, and
-launches it. **No .NET runtime required** — the binary is self-contained.
+This downloads the latest Hot Corners installer from GitHub Releases and runs
+it with a UAC prompt. The installer drops Hot Corners into
+`C:\Program Files\Hot Corners`, registers a clean entry in **Apps & Features**,
+opts in to **Start with Windows**, and launches the tray app. **No .NET
+runtime required** — the binary is self-contained.
+
+Hot Corners checks GitHub for new versions in the background and prompts you to
+install them in-place (you'll see a UAC prompt during the update).
 
 ### Manual install
 
 1. Go to [Releases](https://github.com/bwya77/Windows-Hot-Corners/releases/latest).
-2. Download `HotCorners-x64.exe` (or `HotCorners-arm64.exe` for ARM PCs).
-3. Save it anywhere you want (e.g. `%LocalAppData%\Programs\HotCorners\HotCorners.exe`).
-4. Run it. A tray icon appears.
-5. To run at sign-in: right-click the tray icon → **Hot Corners Settings…** →
-   tick **Start Hot Corners when I sign in to Windows**.
+2. Download `HotCornersSetup-<version>-win-x64.exe` (or `-win-arm64.exe` for ARM PCs).
+3. Run it. The installer takes care of the rest.
 
 ### Uninstall
+
+Either use **Apps & Features** → **Hot Corners** → **Uninstall**, or run:
 
 ```powershell
 irm https://raw.githubusercontent.com/bwya77/Windows-Hot-Corners/main/uninstall.ps1 | iex
 ```
 
-Or manually: stop `HotCorners.exe`, delete `%LocalAppData%\Programs\HotCorners\`,
-and remove the `HotCorners` value under
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-
-Your settings live at `%AppData%\HotCorners\settings.json` — delete that folder
-to also clear preferences.
+Your settings live at `%AppData%\HotCorners\settings.json` and are preserved
+across uninstall/reinstall. Pass `-PurgeSettings` to the uninstall script (or
+delete the folder manually) to clear them too.
 
 ---
 

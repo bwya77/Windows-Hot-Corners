@@ -31,6 +31,8 @@ public sealed class Settings
 
     public int CooldownMs { get; set; } = 500;
 
+    public bool LaunchAtLogin { get; set; } = false;
+
     public static Settings Load()
     {
         try

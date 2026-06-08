@@ -19,3 +19,8 @@ out/
 *.bak
 Thumbs.db
 .DS_Store
+
+# Build artifacts
+HotCornersSetup-*.exe
+SHA256SUMS.txt
+

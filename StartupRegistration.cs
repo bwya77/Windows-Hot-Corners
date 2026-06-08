@@ -29,4 +29,21 @@ internal static class StartupRegistration
             key.DeleteValue(ValueName, throwOnMissingValue: false);
         }
     }
+
+    /// <summary>
+    /// Reconciles the HKCU Run key with the app-owned LaunchAtLogin setting. Called on every
+    /// app start so the value always points at the current install path (handy after the
+    /// installer moved the binary from %LocalAppData% to Program Files, for example).
+    /// </summary>
+    public static void Reconcile(bool wanted)
+    {
+        try
+        {
+            SetEnabled(wanted);
+        }
+        catch
+        {
+            // Best-effort — the user can still toggle from Settings.
+        }
+    }
 }

@@ -4,34 +4,34 @@
     Installs Hot Corners for Windows.
 
 .DESCRIPTION
-    Downloads the latest release of Hot Corners from GitHub, places it in
-    %LocalAppData%\Programs\HotCorners\, registers it to run at sign-in, and
-    launches it.
+    Downloads the latest Hot Corners installer from GitHub and runs it with UAC
+    elevation. The installer puts Hot Corners in "C:\Program Files\Hot Corners",
+    registers a clean uninstaller in Apps & Features, optionally sets it to
+    start at sign-in, and launches it.
+
+.PARAMETER NoStartup
+    Install without the "Start with Windows" task ticked. You can still toggle
+    autostart later from the Hot Corners Settings window.
 
 .PARAMETER NoStart
-    Install and register autostart, but don't launch immediately.
-
-.PARAMETER NoAutostart
-    Install but skip the Run-at-login registry entry.
+    Install but don't launch immediately. (Default: launch after install.)
 
 .EXAMPLE
     irm https://raw.githubusercontent.com/bwya77/Windows-Hot-Corners/main/install.ps1 | iex
 
 .EXAMPLE
-    .\install.ps1 -NoAutostart
+    .\install.ps1 -NoStartup
 #>
 [CmdletBinding()]
 param(
-    [switch]$NoStart,
-    [switch]$NoAutostart
+    [switch]$NoStartup,
+    [switch]$NoStart
 )
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$repo       = 'bwya77/Windows-Hot-Corners'
-$installDir = Join-Path $env:LOCALAPPDATA 'Programs\HotCorners'
-$exePath    = Join-Path $installDir 'HotCorners.exe'
+$repo = 'bwya77/Windows-Hot-Corners'
 
 # --- Architecture detection ------------------------------------------------
 $archEnv = $env:PROCESSOR_ARCHITECTURE
@@ -42,22 +42,12 @@ if ($archEnv -eq 'ARM64') {
 } else {
     throw "Hot Corners requires 64-bit Windows. Detected: $archEnv"
 }
-$assetName = "HotCorners-$arch.exe"
 
 Write-Host ""
 Write-Host "  Hot Corners for Windows" -ForegroundColor Cyan
 Write-Host "  -----------------------"
 Write-Host "  Architecture : $arch"
-Write-Host "  Install to   : $installDir"
 Write-Host ""
-
-# --- Stop existing instance ------------------------------------------------
-$running = Get-Process -Name HotCorners -ErrorAction SilentlyContinue
-if ($running) {
-    Write-Host "Stopping running Hot Corners instance..." -ForegroundColor Yellow
-    $running | ForEach-Object { Stop-Process -Id $_.Id -Force }
-    Start-Sleep -Milliseconds 600
-}
 
 # --- Resolve latest release asset -----------------------------------------
 Write-Host "Looking up latest release..."
@@ -70,43 +60,51 @@ try {
     throw "Couldn't reach GitHub: $($_.Exception.Message)"
 }
 
-$asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+$asset = $release.assets | Where-Object {
+    $_.name -like "HotCornersSetup-*-win-$arch.exe"
+} | Select-Object -First 1
+
 if (-not $asset) {
     $available = ($release.assets | ForEach-Object { $_.name }) -join ', '
-    throw "Release $($release.tag_name) doesn't contain $assetName. Available: $available"
+    throw "Release $($release.tag_name) doesn't contain a Hot Corners installer for $arch. Available: $available"
 }
 
 # --- Download -------------------------------------------------------------
-New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+$tempPath = Join-Path $env:TEMP $asset.name
 Write-Host "Downloading $($release.tag_name) ($([math]::Round($asset.size / 1MB, 1)) MB)..."
-Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $exePath -UseBasicParsing
+Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tempPath -UseBasicParsing
 
-# Quick sanity: file exists and looks like a PE
-if (-not (Test-Path $exePath) -or (Get-Item $exePath).Length -lt 100KB) {
+if (-not (Test-Path $tempPath) -or (Get-Item $tempPath).Length -lt 500KB) {
     throw "Download failed or file is too small."
 }
 
-# --- Register autostart ---------------------------------------------------
-if (-not $NoAutostart) {
-    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    if (-not (Test-Path $runKey)) {
-        New-Item -Path $runKey -Force | Out-Null
-    }
-    Set-ItemProperty -Path $runKey -Name 'HotCorners' -Value "`"$exePath`""
-    Write-Host "Registered Hot Corners to run at sign-in." -ForegroundColor Green
+# --- Run installer (UAC prompt) -------------------------------------------
+# Pass /SILENT so installation runs without showing the wizard. The installer's
+# "Start with Windows" task is ticked by default; use /TASKS=! to opt out.
+$args = @('/SILENT')
+if ($NoStartup) {
+    $args += '/TASKS=!startupwithwindows'
 }
 
-# --- Launch ---------------------------------------------------------------
+Write-Host "Launching installer (you'll see a UAC prompt)..." -ForegroundColor Yellow
+$proc = Start-Process -FilePath $tempPath -ArgumentList $args -Verb RunAs -Wait -PassThru
+if ($proc.ExitCode -ne 0) {
+    throw "Installer exited with code $($proc.ExitCode)."
+}
+
+Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
+
+# --- Launch (if not already started by installer) -------------------------
 if (-not $NoStart) {
-    Start-Process -FilePath $exePath
     Start-Sleep -Seconds 1
-    if (Get-Process -Name HotCorners -ErrorAction SilentlyContinue) {
-        Write-Host "Hot Corners is running. Look for the tray icon to configure." -ForegroundColor Green
-    } else {
-        Write-Warning "Hot Corners process not detected after launch. Try running $exePath manually."
+    if (-not (Get-Process -Name HotCorners -ErrorAction SilentlyContinue)) {
+        $exePath = Join-Path $env:ProgramFiles 'Hot Corners\HotCorners.exe'
+        if (Test-Path $exePath) {
+            Start-Process -FilePath $exePath
+        }
     }
 }
 
 Write-Host ""
-Write-Host "Done. Installed to: $exePath" -ForegroundColor Cyan
+Write-Host "Hot Corners installed. Look for the tray icon to configure." -ForegroundColor Green
 Write-Host ""

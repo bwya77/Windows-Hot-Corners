@@ -1,96 +1,121 @@
-name: Release
+name: Build & Release
 
+# A push to main publishes a downloadable release using the version in
+# Directory.Build.props (the same version stamped into the binary and shown in
+# Settings, so dev builds and releases always match). Bump that version to cut
+# a new release; a push whose version was already released just builds and
+# validates without republishing. Doc-only changes are ignored. You can also
+# trigger a build manually from the Actions tab via "Run workflow".
 on:
   push:
-    tags: [ 'v*' ]
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/**'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag name (e.g. v0.2.0) — only used for manual runs'
-        required: true
-        default: 'v0.0.0-manual'
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  release:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        rid: [ win-x64, win-arm64 ]
-    outputs:
-      tag: ${{ steps.meta.outputs.tag }}
-
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
         with:
           dotnet-version: '8.0.x'
 
-      - name: Resolve tag
-        id: meta
+      - name: Compute version
+        id: ver
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = if ($env:GITHUB_REF -like 'refs/tags/*') {
-            $env:GITHUB_REF -replace '^refs/tags/',''
-          } else {
-            '${{ github.event.inputs.tag }}'
+          [xml]$props = Get-Content "Directory.Build.props"
+          $version = ([string]$props.Project.PropertyGroup.Version).Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            Write-Error "No <Version> found in Directory.Build.props"; exit 1
           }
-          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Tag: $tag"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Building Hot Corners $version"
 
-      - name: Publish self-contained (${{ matrix.rid }})
+          # Only publish when this version has not been released yet, so a push
+          # that does not bump the version never overwrites or duplicates a release.
+          $null = gh release view "v$version" 2>&1
+          $exists = ($LASTEXITCODE -eq 0)
+          $global:LASTEXITCODE = 0
+          if ($exists) {
+            Write-Host "Release v$version already exists; building without publishing."
+            "should_release=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "should_release=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+          exit 0
+
+      - name: Publish win-x64
         shell: pwsh
         run: |
-          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true `
-            -p:DebugType=embedded `
-            -p:PublishReadyToRun=${{ matrix.rid == 'win-x64' }} `
-            -o publish\${{ matrix.rid }}
+          $v = "${{ steps.ver.outputs.version }}"
+          dotnet publish HotCorners.csproj -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=embedded `
+            -p:Version=$v -o publish/win-x64
 
-      - name: Rename exe with arch suffix
+      - name: Publish win-arm64
         shell: pwsh
         run: |
-          $arch = if ('${{ matrix.rid }}' -eq 'win-x64') { 'x64' } else { 'arm64' }
-          $src = "publish\${{ matrix.rid }}\HotCorners.exe"
-          $dst = "publish\${{ matrix.rid }}\HotCorners-$arch.exe"
-          Move-Item $src $dst
-          $size = [math]::Round((Get-Item $dst).Length / 1MB, 1)
-          Write-Host "$dst  ($size MB)"
+          $v = "${{ steps.ver.outputs.version }}"
+          dotnet publish HotCorners.csproj -c Release -r win-arm64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=embedded `
+            -p:Version=$v -o publish/win-arm64
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: HotCorners-${{ matrix.rid }}
-          path: publish/${{ matrix.rid }}/HotCorners-*.exe
-          if-no-files-found: error
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Flatten artifacts
+      # Build a Windows installer per architecture from the publish output. ISCC ships on
+      # windows-latest; install it on the fly if a future runner image drops it.
+      - name: Build installers
+        shell: pwsh
         run: |
-          mkdir -p out
-          find artifacts -name 'HotCorners-*.exe' -exec cp {} out/ \;
-          ls -la out/
+          $v = "${{ steps.ver.outputs.version }}"
+          $iscc = (Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe","C:\Program Files\Inno Setup 6\ISCC.exe" -EA SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y
+            $iscc = (Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe","C:\Program Files\Inno Setup 6\ISCC.exe" -EA SilentlyContinue | Select-Object -First 1).FullName
+          }
+          if (-not $iscc) { throw "ISCC (Inno Setup) not found" }
+          foreach ($arch in 'x64','arm64') {
+            & "$iscc" "/DAppVersion=$v" "/DArch=$arch" "/DSourceDir=$env:GITHUB_WORKSPACE\publish\win-$arch" "/O$env:GITHUB_WORKSPACE" "installer\HotCorners.iss"
+            if ($LASTEXITCODE -ne 0) { throw "ISCC failed for $arch" }
+          }
+          Get-ChildItem HotCornersSetup-*.exe | ForEach-Object { Write-Host "$($_.Name)  $([math]::Round($_.Length/1MB,1)) MB" }
+
+      # SHA-256 checksums so users can verify their downloads.
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-FileHash HotCornersSetup-*.exe -Algorithm SHA256 |
+            ForEach-Object { '{0}  {1}' -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
+            Out-File -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        if: steps.ver.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          name: Hot Corners ${{ needs.build.outputs.tag }}
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Hot Corners v${{ steps.ver.outputs.version }}
           generate_release_notes: true
-          files: out/HotCorners-*.exe
+          files: |
+            HotCornersSetup-*.exe
+            SHA256SUMS.txt

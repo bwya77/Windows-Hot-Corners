@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    Single source of truth for the app version. Both dev builds (dotnet run / dotnet build)
+    and CI release builds stamp this into AssemblyInformationalVersion, which the in-app
+    UpdateChecker reads to compare against the latest GitHub release tag. Bump this value
+    to cut a new release — a push to main whose version already has a matching tag won't
+    re-publish.
+  -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>

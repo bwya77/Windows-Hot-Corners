@@ -1,3 +1,5 @@
+using HotCorners.Updates;
+
 namespace HotCorners;
 
 internal sealed class SettingsForm : Form
@@ -6,6 +8,7 @@ internal sealed class SettingsForm : Form
     private static readonly HotAction[] AllActions = Enum.GetValues<HotAction>();
 
     private readonly Settings _settings;
+    private readonly Func<Task>? _onCheckForUpdates;
     private readonly ComboBox _topLeft;
     private readonly ComboBox _topRight;
     private readonly ComboBox _bottomLeft;
@@ -14,9 +17,10 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _suppressFullscreen;
     private readonly CheckBox _runAtLogin;
 
-    public SettingsForm(Settings settings)
+    public SettingsForm(Settings settings, Func<Task>? onCheckForUpdates = null)
     {
         _settings = settings;
+        _onCheckForUpdates = onCheckForUpdates;
 
         Text = "Hot Corners";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -24,7 +28,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = true;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(600, 620);
+        ClientSize = new Size(600, 660);
         BackColor = Color.FromArgb(244, 245, 248);
         Font = new Font("Segoe UI", 9.5f);
         Icon = SystemIcons.Application;
@@ -114,7 +118,7 @@ internal sealed class SettingsForm : Form
             _dwell.Items.Add($"{ms} ms");
         }
         var dwellIndex = Array.IndexOf(DwellPresets, _settings.DwellMs);
-        _dwell.SelectedIndex = dwellIndex >= 0 ? dwellIndex : 3; // default 150 ms
+        _dwell.SelectedIndex = dwellIndex >= 0 ? dwellIndex : 3;
         _dwell.SelectedIndexChanged += (_, _) =>
         {
             _settings.DwellMs = DwellPresets[_dwell.SelectedIndex];
@@ -151,20 +155,66 @@ internal sealed class SettingsForm : Form
         _runAtLogin = new CheckBox
         {
             Text = "Start Hot Corners when I sign in to Windows",
-            Checked = StartupRegistration.IsEnabled(),
+            Checked = _settings.LaunchAtLogin,
             AutoSize = true,
             Location = new Point(36, 522),
             BackColor = Color.Transparent,
         };
         _runAtLogin.CheckedChanged += (_, _) =>
+        {
+            _settings.LaunchAtLogin = _runAtLogin.Checked;
+            _settings.Save();
             StartupRegistration.SetEnabled(_runAtLogin.Checked);
+        };
         Controls.Add(_runAtLogin);
+
+        // About / updates row
+        var aboutHeader = new Label
+        {
+            Text = "About",
+            Font = new Font("Segoe UI Semibold", 10.5f),
+            ForeColor = Color.FromArgb(18, 22, 28),
+            AutoSize = true,
+            Location = new Point(36, 568),
+            BackColor = Color.Transparent,
+        };
+        var versionLabel = new Label
+        {
+            Text = $"Version {UpdateChecker.CurrentVersion.ToString(3)}",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(82, 90, 100),
+            Location = new Point(36, 596),
+            BackColor = Color.Transparent,
+        };
+        var checkUpdates = new Button
+        {
+            Text = "Check for Updates",
+            Size = new Size(150, 28),
+            Location = new Point(220, 592),
+            FlatStyle = FlatStyle.System,
+            Enabled = _onCheckForUpdates != null,
+        };
+        checkUpdates.Click += async (_, _) =>
+        {
+            if (_onCheckForUpdates == null) return;
+            checkUpdates.Enabled = false;
+            checkUpdates.Text = "Checking\u2026";
+            try { await _onCheckForUpdates(); }
+            finally
+            {
+                checkUpdates.Text = "Check for Updates";
+                checkUpdates.Enabled = true;
+            }
+        };
+        Controls.Add(aboutHeader);
+        Controls.Add(versionLabel);
+        Controls.Add(checkUpdates);
 
         var done = new Button
         {
             Text = "Done",
             Size = new Size(100, 30),
-            Location = new Point(ClientSize.Width - 100 - 36, ClientSize.Height - 30 - 24),
+            Location = new Point(ClientSize.Width - 100 - 36, ClientSize.Height - 30 - 20),
             FlatStyle = FlatStyle.System,
         };
         done.Click += (_, _) => Close();

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using HotCorners.Updates;
 
 namespace HotCorners;
 
@@ -7,6 +8,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _poll;
     private readonly Settings _settings = Settings.Load();
+    private readonly UpdateService _updateService;
 
     private DateTime _enteredAt = DateTime.MinValue;
     private DateTime _lastFiredAt = DateTime.MinValue;
@@ -14,10 +16,16 @@ internal sealed class TrayContext : ApplicationContext
     private bool _firedForThisEntry;
     private bool _paused;
     private SettingsForm? _settingsForm;
+    private UpdatePromptForm? _updateForm;
     private ToolStripMenuItem? _pauseItem;
 
     public TrayContext()
     {
+        // Reconcile the HKCU Run key with the app-owned LaunchAtLogin setting on every start
+        // so we always point at the current install path (Program Files), not a stale path
+        // from a moved/upgraded install.
+        StartupRegistration.Reconcile(_settings.LaunchAtLogin);
+
         _tray = new NotifyIcon
         {
             Icon = SystemIcons.Application,
@@ -30,6 +38,9 @@ internal sealed class TrayContext : ApplicationContext
         _poll = new System.Windows.Forms.Timer { Interval = 15 };
         _poll.Tick += OnPoll;
         _poll.Start();
+
+        _updateService = new UpdateService(_tray, ShowUpdatePrompt);
+        _updateService.StartBackgroundChecks();
     }
 
     private ContextMenuStrip BuildMenu()
@@ -50,10 +61,14 @@ internal sealed class TrayContext : ApplicationContext
 
         menu.Items.Add(new ToolStripSeparator());
 
+        var checkUpdates = new ToolStripMenuItem("Check for Updates\u2026");
+        checkUpdates.Click += async (_, _) => await _updateService.CheckAsync(showIfUpToDate: true);
+        menu.Items.Add(checkUpdates);
+
         var about = new ToolStripMenuItem("About Hot Corners\u2026");
         about.Click += (_, _) =>
         {
-            var v = typeof(TrayContext).Assembly.GetName().Version?.ToString(3) ?? "?";
+            var v = UpdateChecker.CurrentVersion.ToString(3);
             MessageBox.Show(
                 $"Hot Corners for Windows\nVersion {v}\n\nMove your cursor into a screen corner to trigger an action.\n\nhttps://github.com/bwya77/Windows-Hot-Corners",
                 "About Hot Corners",
@@ -74,9 +89,21 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
 
-        _settingsForm = new SettingsForm(_settings);
+        _settingsForm = new SettingsForm(_settings, async () => await _updateService.CheckAsync(showIfUpToDate: true));
         _settingsForm.FormClosed += (_, _) => _settingsForm = null;
         _settingsForm.Show();
+    }
+
+    private void ShowUpdatePrompt(UpdateChecker.UpdateInfo info)
+    {
+        if (_updateForm is { IsDisposed: false })
+        {
+            _updateForm.Activate();
+            return;
+        }
+        _updateForm = new UpdatePromptForm(info);
+        _updateForm.FormClosed += (_, _) => _updateForm = null;
+        _updateForm.Show();
     }
 
     private void OnPoll(object? sender, EventArgs e)
@@ -174,6 +201,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             _poll.Stop();
             _poll.Dispose();
+            _updateService.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
         }
