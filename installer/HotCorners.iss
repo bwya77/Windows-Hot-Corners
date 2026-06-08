@@ -40,15 +40,12 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ; Close a running Hot Corners before replacing files so the in-app update can replace the
-; locked executable. CloseApplications=force tells Inno to forcibly terminate any process
-; that doesn't respond to the Restart Manager close request (WinForms tray + WinUI 3
-; settings app don't always cooperate with RM). AppMutex lets Inno detect the tray
-; instance upfront via its single-instance mutex. PrepareToInstall (below) is a final
-; belt-and-suspenders taskkill so file replacement never fails on locked exes.
+; locked executable. AppMutex lets Inno detect the running tray via its single-instance
+; mutex (so Restart Manager has the right process to target). PrepareToInstall (below) is
+; a final belt-and-suspenders taskkill so file replacement never fails on locked exes.
 ; Relaunch is handled explicitly in [Run] (including silent installs), not via Restart
 ; Manager, which does not reliably restart the app after a silent update.
-CloseApplications=force
-CloseApplicationsFilter=*.exe,*.dll
+CloseApplications=yes
 RestartApplications=no
 AppMutex=HotCorners.SingleInstance
 #if Arch == "arm64"
