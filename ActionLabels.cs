@@ -1,6 +1,6 @@
 namespace HotCorners;
 
-internal static class ActionLabels
+public static class ActionLabels
 {
     public static string Pretty(HotAction a) => a switch
     {

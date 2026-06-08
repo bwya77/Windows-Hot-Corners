@@ -64,6 +64,13 @@ jobs:
           }
           exit 0
 
+      # The tray app and the WinUI 3 settings app publish separately:
+      # the tray (WinForms) goes to publish/win-<arch>/ as a single-file exe, and
+      # the settings app (WinUI 3, which can't be single-file) goes to a Settings
+      # subfolder so Inno Setup's recursive copy lands it at {app}\Settings\.
+      # Self-contained WindowsAppSDK bundles ~100 MB of AI/ML runtime DLLs that
+      # the settings UI never calls, so we delete them after publish; this drops
+      # the installer from ~200 MB to ~60 MB.
       - name: Publish win-x64
         shell: pwsh
         run: |
@@ -72,6 +79,12 @@ jobs:
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true -p:DebugType=embedded `
             -p:Version=$v -o publish/win-x64
+          dotnet publish HotCorners.Settings/HotCorners.Settings.csproj -c Release -r win-x64 `
+            -p:Platform=x64 --self-contained true -p:WindowsAppSDKSelfContained=true `
+            -p:Version=$v -o publish/win-x64/Settings
+          Get-ChildItem publish/win-x64/Settings -Recurse -File -Include `
+            'onnxruntime*.dll','Microsoft.AI.MachineLearning*.dll','DirectML*.dll' |
+            Remove-Item -Force -ErrorAction SilentlyContinue
 
       - name: Publish win-arm64
         shell: pwsh
@@ -81,6 +94,12 @@ jobs:
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true -p:DebugType=embedded `
             -p:Version=$v -o publish/win-arm64
+          dotnet publish HotCorners.Settings/HotCorners.Settings.csproj -c Release -r win-arm64 `
+            -p:Platform=arm64 --self-contained true -p:WindowsAppSDKSelfContained=true `
+            -p:Version=$v -o publish/win-arm64/Settings
+          Get-ChildItem publish/win-arm64/Settings -Recurse -File -Include `
+            'onnxruntime*.dll','Microsoft.AI.MachineLearning*.dll','DirectML*.dll' |
+            Remove-Item -Force -ErrorAction SilentlyContinue
 
       # Build a Windows installer per architecture from the publish output. ISCC ships on
       # windows-latest; install it on the fly if a future runner image drops it.

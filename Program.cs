@@ -1,4 +1,5 @@
 using System.Threading;
+using HotCorners.Settings;
 
 namespace HotCorners;
 
@@ -16,13 +17,15 @@ internal static class Program
         }
 
         // The Inno installer passes --enable-startup when the "Start with Windows" task was
-        // ticked. Persist the user's choice so the app stays the single owner of the HKCU Run
-        // key; TrayContext reconciles the registry value on startup based on this setting.
+        // ticked. Persist the user's choice via the same SettingsStore the tray uses, so the
+        // app stays the single owner of the HKCU Run key (TrayContext mirrors the setting to
+        // the registry on startup and on every settings change).
         if (args.Any(a => string.Equals(a, "--enable-startup", StringComparison.OrdinalIgnoreCase)))
         {
-            var s = Settings.Load();
-            s.LaunchAtLogin = true;
-            s.Save();
+            using var store = new SettingsStore();
+            var snapshot = store.Current.Clone();
+            snapshot.LaunchAtLogin = true;
+            store.Save(snapshot);
         }
 
         ApplicationConfiguration.Initialize();
@@ -30,3 +33,4 @@ internal static class Program
         Application.Run(new TrayContext());
     }
 }
+

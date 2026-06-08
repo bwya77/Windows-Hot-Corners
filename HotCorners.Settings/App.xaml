@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Application
+    x:Class="HotCorners.SettingsApp.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="Card" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="18,16" />
+            </Style>
+            <!-- Compact toggles flush to the right edge of their row. -->
+            <x:Double x:Key="ToggleSwitchThemeMinWidth">0</x:Double>
+            <Style TargetType="ToggleSwitch">
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="OnContent" Value="" />
+                <Setter Property="OffContent" Value="" />
+                <Setter Property="HorizontalAlignment" Value="Right" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

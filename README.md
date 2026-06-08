@@ -4,7 +4,8 @@ macOS-style **Hot Corners** for Windows. Move your cursor into a corner of your
 screen, hold it briefly, and a configurable action fires — Task View, Show
 Desktop, virtual desktop switching, lock screen, and more.
 
-Lightweight tray app written in C# / .NET 8 WinForms.
+Native tray app written in C# / .NET 8 — WinForms tray icon plus a
+WinUI 3 settings window. No runtime to install.
 
 ---
 

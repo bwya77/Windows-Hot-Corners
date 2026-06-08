@@ -2,7 +2,7 @@ using Microsoft.Win32;
 
 namespace HotCorners;
 
-internal static class StartupRegistration
+public static class StartupRegistration
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "HotCorners";
@@ -21,7 +21,7 @@ internal static class StartupRegistration
 
         if (enabled)
         {
-            var exe = Environment.ProcessPath ?? Application.ExecutablePath;
+            var exe = Environment.ProcessPath ?? AppContext.BaseDirectory;
             key.SetValue(ValueName, $"\"{exe}\"");
         }
         else

@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
+using HotCorners.Settings;
 using HotCorners.Updates;
 
 namespace HotCorners;
@@ -7,23 +10,28 @@ internal sealed class TrayContext : ApplicationContext
 {
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _poll;
-    private readonly Settings _settings = Settings.Load();
+    private readonly SettingsStore _store = new();
     private readonly UpdateService _updateService;
 
+    private AppSettings _settings;
     private DateTime _enteredAt = DateTime.MinValue;
     private DateTime _lastFiredAt = DateTime.MinValue;
     private Corner _currentCorner = Corner.None;
     private bool _firedForThisEntry;
     private bool _paused;
-    private SettingsForm? _settingsForm;
+    private Process? _settingsProcess;
     private UpdatePromptForm? _updateForm;
     private ToolStripMenuItem? _pauseItem;
+    private readonly SynchronizationContext? _uiContext;
 
     public TrayContext()
     {
-        // Reconcile the HKCU Run key with the app-owned LaunchAtLogin setting on every start
-        // so we always point at the current install path (Program Files), not a stale path
-        // from a moved/upgraded install.
+        _uiContext = SynchronizationContext.Current;
+        _settings = _store.Current;
+
+        // Reconcile the HKCU Run key on every startup so it always points at the current
+        // install path. The tray app stays the single owner of that key — the settings UI
+        // only writes AppSettings.LaunchAtLogin and we mirror it to the registry here.
         StartupRegistration.Reconcile(_settings.LaunchAtLogin);
 
         _tray = new NotifyIcon
@@ -41,6 +49,11 @@ internal sealed class TrayContext : ApplicationContext
 
         _updateService = new UpdateService(_tray, ShowUpdatePrompt);
         _updateService.StartBackgroundChecks();
+
+        // External edits (from the WinUI settings app or a manual JSON tweak) arrive on a
+        // background thread; marshal back onto the UI thread so any tray text refresh stays
+        // single-threaded.
+        _store.Changed += OnSettingsChanged;
     }
 
     private ContextMenuStrip BuildMenu()
@@ -81,17 +94,107 @@ internal sealed class TrayContext : ApplicationContext
         return menu;
     }
 
+    private void OnSettingsChanged(AppSettings updated)
+    {
+        // Always update the cached snapshot — even before we marshal — so the poll loop
+        // (which runs on the UI thread) sees the latest values.
+        _settings = updated;
+
+        void apply()
+        {
+            // Mirror the LaunchAtLogin toggle to the HKCU Run key. The settings UI doesn't
+            // touch the registry directly; only the tray app does.
+            StartupRegistration.Reconcile(updated.LaunchAtLogin);
+        }
+
+        if (_uiContext != null) _uiContext.Post(_ => apply(), null);
+        else apply();
+    }
+
+    /// <summary>
+    /// Open the standalone WinUI 3 settings window. If it's already running, focus its
+    /// existing process; otherwise launch HotCorners.Settings.exe (which sits in the
+    /// "Settings" subfolder next to the tray exe per the installer layout).
+    /// </summary>
     private void OpenSettings()
     {
-        if (_settingsForm is { IsDisposed: false })
+        if (_settingsProcess is { HasExited: false })
         {
-            _settingsForm.Activate();
+            try
+            {
+                if (_settingsProcess.MainWindowHandle != IntPtr.Zero)
+                    SetForegroundWindow(_settingsProcess.MainWindowHandle);
+                return;
+            }
+            catch { /* fall through and try to start a new one */ }
+        }
+
+        var path = ResolveSettingsExePath();
+        if (path == null || !File.Exists(path))
+        {
+            MessageBox.Show(
+                "Couldn't find HotCorners.Settings.exe. Try reinstalling Hot Corners.",
+                "Hot Corners",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
             return;
         }
 
-        _settingsForm = new SettingsForm(_settings, async () => await _updateService.CheckAsync(showIfUpToDate: true));
-        _settingsForm.FormClosed += (_, _) => _settingsForm = null;
-        _settingsForm.Show();
+        try
+        {
+            _settingsProcess = Process.Start(new ProcessStartInfo(path)
+            {
+                UseShellExecute = false,
+                WorkingDirectory = Path.GetDirectoryName(path) ?? "",
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Couldn't launch the settings window:\n\n{ex.Message}",
+                "Hot Corners",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>
+    /// Look up the settings exe path. Installer drops it at <c>&lt;app&gt;\Settings\HotCorners.Settings.exe</c>.
+    /// During <c>dotnet run</c> dev builds, fall back to the sibling project's published or
+    /// build output so devs can iterate without re-publishing.
+    /// </summary>
+    private static string? ResolveSettingsExePath()
+    {
+        var baseDir = AppContext.BaseDirectory;
+
+        // 1. Installer layout: alongside in a Settings subfolder.
+        var installed = Path.Combine(baseDir, "Settings", "HotCorners.Settings.exe");
+        if (File.Exists(installed)) return installed;
+
+        // 2. Same folder (single-folder publish).
+        var sibling = Path.Combine(baseDir, "HotCorners.Settings.exe");
+        if (File.Exists(sibling)) return sibling;
+
+        // 3. Dev layout: ..\..\..\..\HotCorners.Settings\bin\<Configuration>\net8.0-windows10.0.19041.0\win-x64\HotCorners.Settings.exe
+        try
+        {
+            var repoRoot = baseDir;
+            for (int i = 0; i < 6 && repoRoot != null; i++)
+            {
+                var candidate = Path.Combine(repoRoot, "HotCorners.Settings", "bin");
+                if (Directory.Exists(candidate))
+                {
+                    var exe = Directory.GetFiles(candidate, "HotCorners.Settings.exe", SearchOption.AllDirectories)
+                                       .OrderByDescending(File.GetLastWriteTimeUtc)
+                                       .FirstOrDefault();
+                    if (exe != null) return exe;
+                }
+                repoRoot = Path.GetDirectoryName(repoRoot.TrimEnd(Path.DirectorySeparatorChar));
+            }
+        }
+        catch { /* dev fallback only */ }
+
+        return null;
     }
 
     private void ShowUpdatePrompt(UpdateChecker.UpdateInfo info)
@@ -202,6 +305,8 @@ internal sealed class TrayContext : ApplicationContext
             _poll.Stop();
             _poll.Dispose();
             _updateService.Dispose();
+            _store.Changed -= OnSettingsChanged;
+            _store.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
         }
@@ -214,4 +319,8 @@ internal sealed class TrayContext : ApplicationContext
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
 }

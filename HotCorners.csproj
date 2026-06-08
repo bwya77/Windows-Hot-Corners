@@ -16,4 +16,16 @@
     <Description>macOS-style hot corners for Windows.</Description>
   </PropertyGroup>
 
+  <!-- The standalone WinUI 3 settings app lives in this subfolder of the repo root.
+       Exclude it from the WinForms app's default globbing so it builds as its own project. -->
+  <ItemGroup>
+    <Compile Remove="HotCorners.Settings\**" />
+    <Page Remove="HotCorners.Settings\**" />
+    <ApplicationDefinition Remove="HotCorners.Settings\**" />
+    <None Remove="HotCorners.Settings\**" />
+    <EmbeddedResource Remove="HotCorners.Settings\**" />
+    <Content Remove="HotCorners.Settings\**" />
+  </ItemGroup>
+
 </Project>
+
