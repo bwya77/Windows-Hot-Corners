@@ -313,13 +313,24 @@ public sealed partial class MainWindow : Window
             }
             if (string.IsNullOrEmpty(requested)) return;
 
+            // The XAML marks "Corners" with IsSelected="True" so the window has a sane
+            // default when launched normally. When we override to a different pane we
+            // have to explicitly clear IsSelected on every other item, otherwise WinUI
+            // leaves the original highlight in place and the user sees two highlighted
+            // items (the XAML-set Corners and the code-set target).
+            NavigationViewItem? target = null;
             foreach (var item in Nav.MenuItems)
             {
-                if (item is NavigationViewItem nv && (nv.Tag as string)?.Equals(requested, StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    Nav.SelectedItem = nv;
-                    return;
-                }
+                if (item is not NavigationViewItem nv) continue;
+                if ((nv.Tag as string)?.Equals(requested, StringComparison.OrdinalIgnoreCase) == true)
+                    target = nv;
+                else
+                    nv.IsSelected = false;
+            }
+            if (target != null)
+            {
+                target.IsSelected = true;
+                Nav.SelectedItem = target;
             }
         }
         catch { /* best effort — falls through to default Corners pane */ }
@@ -644,8 +655,14 @@ public sealed partial class MainWindow : Window
         var nameLabel = string.IsNullOrEmpty(m.FriendlyName)
             ? $"Display {m.Index}"
             : $"Display {m.Index} - {m.FriendlyName}";
-        var tooltipText = $"{nameLabel}{(m.IsPrimary ? " (Primary)" : "")}\n{m.Width}\u00D7{m.Height} at {m.Left},{m.Top}\n\nClick any corner dot to switch that corner on or off.";
+        var tooltipText = $"{nameLabel}{(m.IsPrimary ? " (Primary)" : "")}\n{m.Width}\u00D7{m.Height} at {m.Left},{m.Top}\n\nClick the tile to toggle the whole display, or click a corner dot to toggle just that corner.";
         ToolTipService.SetToolTip(grid, tooltipText);
+
+        // ---- Whole-tile click toggles all four corners at once. The corner dots above
+        //      mark their PointerPressed as Handled so a click on a dot never bubbles up
+        //      here. anyOn -> turn everything off; allOff -> turn everything back on.
+        grid.Tag = m.HardwareId;
+        grid.PointerPressed += OnMonitorTilePressed;
         return grid;
     }
 
@@ -693,6 +710,32 @@ public sealed partial class MainWindow : Window
         var next = _store.Current.Clone();
         if (!next.DisabledMonitorCorners.Remove(key))
             next.DisabledMonitorCorners.Add(key);
+        _store.Save(next);
+        BuildMonitorsLayout();
+    }
+
+    private void OnMonitorTilePressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        // Corner dots set e.Handled = true in OnCornerTogglePressed, so a click on a
+        // dot never reaches this handler -- only clicks on the tile body do.
+        if (sender is not Grid grid || grid.Tag is not string hwid) return;
+        e.Handled = true;
+        var next = _store.Current.Clone();
+        var keys = Enum.GetValues<Corner>()
+            .Where(c => c != Corner.None)
+            .Select(c => CornerKey(hwid, c))
+            .ToList();
+        var anyArmed = keys.Any(k => !next.DisabledMonitorCorners.Contains(k));
+        if (anyArmed)
+        {
+            // Anything on -> turn the whole display off.
+            foreach (var k in keys) next.DisabledMonitorCorners.Add(k);
+        }
+        else
+        {
+            // Everything off -> turn the whole display back on.
+            foreach (var k in keys) next.DisabledMonitorCorners.Remove(k);
+        }
         _store.Save(next);
         BuildMonitorsLayout();
     }
