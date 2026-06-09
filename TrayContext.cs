@@ -35,6 +35,12 @@ internal sealed class TrayContext : ApplicationContext
         _settings = _store.Current;
         _overlay.Enabled = _settings.ShowCornerOverlay;
 
+        // One-time migration: v0.4.x exposed a "PrimaryOnly" radio. v0.5+ replaced it
+        // with a per-monitor picker keyed by device name. Translate the old choice into
+        // the new model on first launch after upgrading, so the user's "only primary"
+        // preference survives without them having to redo it.
+        MigrateLegacyMonitorMode();
+
         // Reconcile the HKCU Run key on every startup so it always points at the current
         // install path. The tray app stays the single owner of that key — the settings UI
         // only writes AppSettings.LaunchAtLogin and we mirror it to the registry here.
@@ -105,6 +111,20 @@ internal sealed class TrayContext : ApplicationContext
             out _pauseItem);
 
         return menu;
+    }
+
+    private void MigrateLegacyMonitorMode()
+    {
+        if (_settings.MultiMonitor != MultiMonitorMode.PrimaryOnly) return;
+
+        var migrated = _settings.Clone();
+        foreach (var s in Screen.AllScreens)
+        {
+            if (!s.Primary) migrated.DisabledMonitors.Add(s.DeviceName);
+        }
+        migrated.MultiMonitor = MultiMonitorMode.AllMonitors;
+        _store.Save(migrated);
+        _settings = migrated;
     }
 
     private static void ShowAbout()
@@ -254,7 +274,7 @@ internal sealed class TrayContext : ApplicationContext
         if (_paused) { _overlay.Cancel(); return; }
         if (!GetCursorPos(out var pt)) return;
 
-        var (corner, screen) = DetectCorner(pt, _settings.MultiMonitor);
+        var (corner, screen) = DetectCorner(pt, _settings);
 
         if (corner != _currentCorner)
         {
@@ -302,14 +322,15 @@ internal sealed class TrayContext : ApplicationContext
     // monitor in the relevant direction. This makes "internal" corners between monitors
     // (where the cursor can keep moving) inert, which matches macOS hot-corner behavior.
     // Returns the matching Screen so the overlay knows which monitor to anchor to.
-    // When mode == PrimaryOnly, only the Windows primary display participates.
-    private static (Corner, Screen?) DetectCorner(POINT pt, MultiMonitorMode mode)
+    // Honors AppSettings.DisabledMonitors so the user can switch hot corners off on a
+    // single display from the Monitors picker without losing their corner bindings.
+    private static (Corner, Screen?) DetectCorner(POINT pt, AppSettings settings)
     {
         const int tol = 2;
         var all = Screen.AllScreens;
-        var armed = mode == MultiMonitorMode.PrimaryOnly
-            ? new[] { Screen.PrimaryScreen! }
-            : all;
+        var disabled = settings.DisabledMonitors;
+        var armed = all.Where(s => !disabled.Contains(s.DeviceName)).ToArray();
+        if (armed.Length == 0) return (Corner.None, null);
 
         foreach (var s in armed)
         {
@@ -321,10 +342,13 @@ internal sealed class TrayContext : ApplicationContext
 
             if (!((atLeft || atRight) && (atTop || atBottom))) continue;
 
-            var leftBlocked = atLeft && HasNeighborHorizontally(armed, s, pt.Y, leftSide: true);
-            var rightBlocked = atRight && HasNeighborHorizontally(armed, s, pt.Y, leftSide: false);
-            var topBlocked = atTop && HasNeighborVertically(armed, s, pt.X, topSide: true);
-            var bottomBlocked = atBottom && HasNeighborVertically(armed, s, pt.X, topSide: false);
+            // "Blocked" must be evaluated against ALL physical monitors, not just the
+            // armed subset. A disabled monitor still lets the cursor escape past that
+            // edge, so the corner can't actually be trapped there.
+            var leftBlocked = atLeft && HasNeighborHorizontally(all, s, pt.Y, leftSide: true);
+            var rightBlocked = atRight && HasNeighborHorizontally(all, s, pt.Y, leftSide: false);
+            var topBlocked = atTop && HasNeighborVertically(all, s, pt.X, topSide: true);
+            var bottomBlocked = atBottom && HasNeighborVertically(all, s, pt.X, topSide: false);
 
             if (atTop && atLeft && !topBlocked && !leftBlocked) return (Corner.TopLeft, s);
             if (atTop && atRight && !topBlocked && !rightBlocked) return (Corner.TopRight, s);

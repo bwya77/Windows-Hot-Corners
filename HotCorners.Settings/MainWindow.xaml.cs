@@ -70,6 +70,10 @@ public sealed partial class MainWindow : Window
 
         PopulateCornerCombos();
         LoadFrom(_store.Current);
+        // Both the tray and the settings UI may be the first thing to launch after upgrading
+        // from v0.4.x. Migrating in both places guarantees the user's "primary only" pick
+        // gets translated into the per-monitor model without depending on launch order.
+        MigrateLegacyMonitorMode();
 
         // External changes (e.g. tray app wrote the file) come in on a background thread;
         // marshal onto the UI thread before mutating XAML.
@@ -86,11 +90,27 @@ public sealed partial class MainWindow : Window
         _ = TryLoadWallpaperAsync();
         // The wallpaper file path changes when the user changes their background
         // (Settings → Personalization), so refresh whenever the window regains focus.
+        // Also rebuild the monitor picker on activation in case the user plugged in or
+        // unplugged a display while the window was in the background.
         Activated += (_, e) =>
         {
-            if (e.WindowActivationState != WindowActivationState.Deactivated)
-                _ = TryLoadWallpaperAsync();
+            if (e.WindowActivationState == WindowActivationState.Deactivated) return;
+            _ = TryLoadWallpaperAsync();
+            if (MonitorsPane.Visibility == Visibility.Visible) BuildMonitorsLayout();
         };
+    }
+
+    private void MigrateLegacyMonitorMode()
+    {
+        var current = _store.Current;
+        if (current.MultiMonitor != MultiMonitorMode.PrimaryOnly) return;
+        var monitors = MonitorEnumerator.EnumerateAll();
+        if (monitors.Count == 0) return;
+        var next = current.Clone();
+        foreach (var m in monitors)
+            if (!m.IsPrimary) next.DisabledMonitors.Add(m.DeviceName);
+        next.MultiMonitor = MultiMonitorMode.AllMonitors;
+        _store.Save(next);
     }
 
     // ---- Layout helpers ---------------------------------------------------
@@ -224,9 +244,14 @@ public sealed partial class MainWindow : Window
     {
         var tag = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string ?? "corners";
         CornersPane.Visibility = tag == "corners" ? Visibility.Visible : Visibility.Collapsed;
+        MonitorsPane.Visibility = tag == "monitors" ? Visibility.Visible : Visibility.Collapsed;
         BehaviorPane.Visibility = tag == "behavior" ? Visibility.Visible : Visibility.Collapsed;
         UpdatesPane.Visibility = tag == "updates" ? Visibility.Visible : Visibility.Collapsed;
         AboutPane.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
+
+        // Rebuild the picker whenever the user lands on it — cheap, and it picks up any
+        // monitor add/remove that happened while the window was open.
+        if (tag == "monitors") BuildMonitorsLayout();
     }
 
     // ---- Settings binding -------------------------------------------------
@@ -259,12 +284,15 @@ public sealed partial class MainWindow : Window
             SuppressFullscreenToggle.IsOn = s.SuppressInFullscreen;
             LaunchAtLoginToggle.IsOn = s.LaunchAtLogin;
             ShowOverlayToggle.IsOn = s.ShowCornerOverlay;
-            MonitorModeRadio.SelectedIndex = s.MultiMonitor == MultiMonitorMode.PrimaryOnly ? 1 : 0;
         }
         finally
         {
             _loading = false;
         }
+
+        // Refresh the monitor picker too, in case the change toggled a display's
+        // armed state from another process (the tray) or a hand-edit of settings.json.
+        if (MonitorsPane.Visibility == Visibility.Visible) BuildMonitorsLayout();
     }
 
     private static int IndexOf(HotAction a)
@@ -331,14 +359,185 @@ public sealed partial class MainWindow : Window
         _store.Save(next);
     }
 
-    private void OnMonitorModeChanged(object sender, SelectionChangedEventArgs e)
+    // ---- Monitors pane ----------------------------------------------------
+
+    /// <summary>
+    /// Render a Windows Settings &gt; Display style picker into <c>MonitorsCanvas</c>:
+    /// each physical monitor becomes a clickable rounded rectangle positioned at its
+    /// real desktop coordinates (uniformly scaled to fit the card). Enabled monitors
+    /// glow with the accent color; disabled ones go muted and washed out. A click
+    /// flips the entry in <see cref="AppSettings.DisabledMonitors"/> and saves.
+    /// </summary>
+    private void BuildMonitorsLayout()
     {
-        if (_loading) return;
+        MonitorsCanvas.Children.Clear();
+        var monitors = MonitorEnumerator.EnumerateAll();
+
+        if (monitors.Count == 0)
+        {
+            MonitorsEmpty.Visibility = Visibility.Visible;
+            MonitorsCanvas.Width = 0;
+            MonitorsCanvas.Height = 0;
+            MonitorsSummaryText.Text = "";
+            MonitorsResetButton.IsEnabled = false;
+            return;
+        }
+        MonitorsEmpty.Visibility = Visibility.Collapsed;
+
+        // Uniform scale so the whole arrangement fits in the card. The card body is
+        // ~660 wide x 300 tall after padding; clamp to leave breathing room around
+        // edges. Smallest practical monitor tile is 110 wide so single-display setups
+        // still render at a reasonable size.
+        var bboxLeft = monitors.Min(m => m.Left);
+        var bboxTop = monitors.Min(m => m.Top);
+        var bboxRight = monitors.Max(m => m.Right);
+        var bboxBottom = monitors.Max(m => m.Bottom);
+        var bboxW = Math.Max(1, bboxRight - bboxLeft);
+        var bboxH = Math.Max(1, bboxBottom - bboxTop);
+
+        const double targetMaxW = 620;
+        const double targetMaxH = 280;
+        var scale = Math.Min(targetMaxW / bboxW, targetMaxH / bboxH);
+        // Don't blow tiny single-display layouts up so they overflow nor shrink them
+        // so small you can't read the number — clamp to a reasonable visual range.
+        scale = Math.Min(scale, 0.35);
+        scale = Math.Max(scale, 0.04);
+
+        var disabled = _store.Current.DisabledMonitors;
+        var armedCount = 0;
+        foreach (var m in monitors)
+        {
+            var isOn = !disabled.Contains(m.DeviceName);
+            if (isOn) armedCount++;
+
+            var tileW = Math.Max(90, m.Width * scale);
+            var tileH = Math.Max(60, m.Height * scale);
+            var left = (m.Left - bboxLeft) * scale;
+            var top = (m.Top - bboxTop) * scale;
+
+            var tile = BuildMonitorTile(m, isOn, tileW, tileH);
+            Canvas.SetLeft(tile, left);
+            Canvas.SetTop(tile, top);
+            MonitorsCanvas.Children.Add(tile);
+        }
+
+        MonitorsCanvas.Width = bboxW * scale;
+        MonitorsCanvas.Height = bboxH * scale;
+
+        var total = monitors.Count;
+        MonitorsSummaryText.Text = armedCount == total
+            ? $"Hot Corners is armed on all {total} display{(total == 1 ? "" : "s")}."
+            : armedCount == 0
+                ? $"Hot Corners is off on every display. Click a monitor to turn it back on."
+                : $"Hot Corners is armed on {armedCount} of {total} displays.";
+        MonitorsResetButton.IsEnabled = armedCount < total;
+    }
+
+    private Button BuildMonitorTile(MonitorInfo m, bool isOn, double width, double height)
+    {
+        var numberText = new TextBlock
+        {
+            Text = m.Index.ToString(),
+            FontSize = Math.Min(48, Math.Max(22, height * 0.42)),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var primaryBadge = new Border
+        {
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentFillColorDefaultBrush"],
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(6, 1, 6, 2),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(6),
+            Visibility = m.IsPrimary ? Visibility.Visible : Visibility.Collapsed,
+            Child = new TextBlock
+            {
+                Text = "Primary",
+                FontSize = 10,
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextOnAccentFillColorPrimaryBrush"],
+            },
+        };
+
+        var stateGlyph = new FontIcon
+        {
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets"),
+            Glyph = isOn ? "\uE73E" : "\uE711", // CheckMark / Cancel
+            FontSize = 12,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 8, 10, 0),
+            Foreground = isOn
+                ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorPrimaryBrush"]
+                : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+        };
+
+        var resText = new TextBlock
+        {
+            Text = $"{m.Width}\u00D7{m.Height}",
+            FontSize = 11,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 0, 6),
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+        };
+
+        var grid = new Grid();
+        grid.Children.Add(numberText);
+        grid.Children.Add(primaryBadge);
+        grid.Children.Add(stateGlyph);
+        grid.Children.Add(resText);
+
+        var button = new Button
+        {
+            Width = width,
+            Height = height,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(10),
+            Content = grid,
+            Tag = m.DeviceName,
+            Opacity = isOn ? 1.0 : 0.55,
+            BorderThickness = new Thickness(isOn ? 2 : 1),
+        };
+        if (isOn)
+        {
+            button.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
+            button.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"];
+        }
+        else
+        {
+            button.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ControlStrokeColorDefaultBrush"];
+            button.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ControlFillColorDisabledBrush"];
+        }
+
+        var tooltipText = string.IsNullOrEmpty(m.FriendlyName)
+            ? $"Display {m.Index}{(m.IsPrimary ? " (Primary)" : "")}\n{m.Width}\u00D7{m.Height} at {m.Left},{m.Top}\n\nClick to turn hot corners {(isOn ? "off" : "on")} for this display."
+            : $"Display {m.Index} — {m.FriendlyName}{(m.IsPrimary ? " (Primary)" : "")}\n{m.Width}\u00D7{m.Height} at {m.Left},{m.Top}\n\nClick to turn hot corners {(isOn ? "off" : "on")} for this display.";
+        ToolTipService.SetToolTip(button, tooltipText);
+
+        button.Click += OnMonitorTileClick;
+        return button;
+    }
+
+    private void OnMonitorTileClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string device) return;
         var next = _store.Current.Clone();
-        next.MultiMonitor = MonitorModeRadio.SelectedIndex == 1
-            ? MultiMonitorMode.PrimaryOnly
-            : MultiMonitorMode.AllMonitors;
+        if (!next.DisabledMonitors.Remove(device))
+            next.DisabledMonitors.Add(device);
         _store.Save(next);
+        BuildMonitorsLayout();
+    }
+
+    private void OnEnableAllMonitors(object sender, RoutedEventArgs e)
+    {
+        var next = _store.Current.Clone();
+        if (next.DisabledMonitors.Count == 0) return;
+        next.DisabledMonitors.Clear();
+        _store.Save(next);
+        BuildMonitorsLayout();
     }
 
     // ---- Updates pane -----------------------------------------------------
