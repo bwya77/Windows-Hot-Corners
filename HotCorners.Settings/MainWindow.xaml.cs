@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using HotCorners;
+using HotCorners.Monitors;
 using HotCorners.Settings;
 using HotCorners.Updates;
 using Microsoft.UI;
@@ -103,14 +104,38 @@ public sealed partial class MainWindow : Window
     private void MigrateLegacyMonitorMode()
     {
         var current = _store.Current;
-        if (current.MultiMonitor != MultiMonitorMode.PrimaryOnly) return;
         var monitors = MonitorEnumerator.EnumerateAll();
-        if (monitors.Count == 0) return;
-        var next = current.Clone();
-        foreach (var m in monitors)
-            if (!m.IsPrimary) next.DisabledMonitors.Add(m.DeviceName);
-        next.MultiMonitor = MultiMonitorMode.AllMonitors;
-        _store.Save(next);
+        var changed = false;
+        var migrated = current.Clone();
+
+        // 1. v0.4.x PrimaryOnly radio -> per-monitor disabled set.
+        if (migrated.MultiMonitor == MultiMonitorMode.PrimaryOnly && monitors.Count > 0)
+        {
+            foreach (var m in monitors)
+                if (!m.IsPrimary) migrated.DisabledMonitors.Add(m.HardwareId);
+            migrated.MultiMonitor = MultiMonitorMode.AllMonitors;
+            changed = true;
+        }
+
+        // 2. v0.5.0 stored \\.\DISPLAYn keys. Upgrade any such entries to their stable
+        //    hardware ID, dropping entries that don't currently resolve (the matching
+        //    physical display isn't connected; the session-only key is meaningless
+        //    without it). v0.5.1+ entries are hardware IDs and survive reconnects.
+        var legacy = migrated.DisabledMonitors.Where(MonitorIdResolver.IsLegacyAdapterKey).ToList();
+        if (legacy.Count > 0)
+        {
+            foreach (var key in legacy)
+            {
+                migrated.DisabledMonitors.Remove(key);
+                var match = monitors.FirstOrDefault(m =>
+                    string.Equals(m.AdapterDeviceName, key, StringComparison.OrdinalIgnoreCase));
+                if (match != null && !string.IsNullOrEmpty(match.HardwareId))
+                    migrated.DisabledMonitors.Add(match.HardwareId);
+            }
+            changed = true;
+        }
+
+        if (changed) _store.Save(migrated);
     }
 
     // ---- Layout helpers ---------------------------------------------------
@@ -192,6 +217,7 @@ public sealed partial class MainWindow : Window
     }
 
     private string? _lastWallpaperPath;
+    private BitmapImage? _wallpaperBitmap;
 
     private async Task TryLoadWallpaperAsync()
     {
@@ -230,7 +256,11 @@ public sealed partial class MainWindow : Window
                 ImageSource = bmp,
                 Stretch = Stretch.UniformToFill,
             };
+            _wallpaperBitmap = bmp;
             _lastWallpaperPath = path;
+
+            // Repaint the monitor picker so each tile picks up the new wallpaper.
+            if (MonitorsPane.Visibility == Visibility.Visible) BuildMonitorsLayout();
         }
         catch
         {
@@ -364,9 +394,11 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// Render a Windows Settings &gt; Display style picker into <c>MonitorsCanvas</c>:
     /// each physical monitor becomes a clickable rounded rectangle positioned at its
-    /// real desktop coordinates (uniformly scaled to fit the card). Enabled monitors
-    /// glow with the accent color; disabled ones go muted and washed out. A click
-    /// flips the entry in <see cref="AppSettings.DisabledMonitors"/> and saves.
+    /// real desktop coordinates (uniformly scaled to fit the card). The user's actual
+    /// desktop wallpaper is sliced per-monitor so the picker mirrors what's on screen.
+    /// Disabled monitors fade out under a dark overlay. A click flips the entry in
+    /// <see cref="AppSettings.DisabledMonitors"/> (keyed by stable hardware ID) and
+    /// saves.
     /// </summary>
     private void BuildMonitorsLayout()
     {
@@ -384,10 +416,6 @@ public sealed partial class MainWindow : Window
         }
         MonitorsEmpty.Visibility = Visibility.Collapsed;
 
-        // Uniform scale so the whole arrangement fits in the card. The card body is
-        // ~660 wide x 300 tall after padding; clamp to leave breathing room around
-        // edges. Smallest practical monitor tile is 110 wide so single-display setups
-        // still render at a reasonable size.
         var bboxLeft = monitors.Min(m => m.Left);
         var bboxTop = monitors.Min(m => m.Top);
         var bboxRight = monitors.Max(m => m.Right);
@@ -395,11 +423,12 @@ public sealed partial class MainWindow : Window
         var bboxW = Math.Max(1, bboxRight - bboxLeft);
         var bboxH = Math.Max(1, bboxBottom - bboxTop);
 
+        // Uniform scale so the whole arrangement fits in the card's drawable area.
+        // Clamp on both ends: never blow a tiny single-display layout up so big it
+        // overflows; never shrink it so small you can't read the number.
         const double targetMaxW = 620;
         const double targetMaxH = 280;
         var scale = Math.Min(targetMaxW / bboxW, targetMaxH / bboxH);
-        // Don't blow tiny single-display layouts up so they overflow nor shrink them
-        // so small you can't read the number — clamp to a reasonable visual range.
         scale = Math.Min(scale, 0.35);
         scale = Math.Max(scale, 0.04);
 
@@ -407,7 +436,7 @@ public sealed partial class MainWindow : Window
         var armedCount = 0;
         foreach (var m in monitors)
         {
-            var isOn = !disabled.Contains(m.DeviceName);
+            var isOn = !disabled.Contains(m.HardwareId);
             if (isOn) armedCount++;
 
             var tileW = Math.Max(90, m.Width * scale);
@@ -415,7 +444,15 @@ public sealed partial class MainWindow : Window
             var left = (m.Left - bboxLeft) * scale;
             var top = (m.Top - bboxTop) * scale;
 
-            var tile = BuildMonitorTile(m, isOn, tileW, tileH);
+            // Wallpaper canvas dimensions for the per-tile slice. We render the
+            // wallpaper at the FULL virtual-desktop size inside each tile, then
+            // negatively translate it so each tile only shows that monitor's portion
+            // of the wallpaper. The Border's CornerRadius clips the overflow.
+            var tile = BuildMonitorTile(m, isOn, tileW, tileH,
+                wallpaperWidth: bboxW * scale,
+                wallpaperHeight: bboxH * scale,
+                wallpaperOffsetX: -((m.Left - bboxLeft) * scale),
+                wallpaperOffsetY: -((m.Top - bboxTop) * scale));
             Canvas.SetLeft(tile, left);
             Canvas.SetTop(tile, top);
             MonitorsCanvas.Children.Add(tile);
@@ -428,13 +465,47 @@ public sealed partial class MainWindow : Window
         MonitorsSummaryText.Text = armedCount == total
             ? $"Hot Corners is armed on all {total} display{(total == 1 ? "" : "s")}."
             : armedCount == 0
-                ? $"Hot Corners is off on every display. Click a monitor to turn it back on."
-                : $"Hot Corners is armed on {armedCount} of {total} displays.";
+                ? $"Every display is off — Hot Corners will arm whichever display is currently connected. Click any tile to lock in a choice."
+                : $"Hot Corners is armed on {armedCount} of {total} displays. Disabled preferences are remembered for next time you connect them.";
         MonitorsResetButton.IsEnabled = armedCount < total;
     }
 
-    private Button BuildMonitorTile(MonitorInfo m, bool isOn, double width, double height)
+    private Button BuildMonitorTile(MonitorInfo m, bool isOn, double width, double height,
+        double wallpaperWidth, double wallpaperHeight, double wallpaperOffsetX, double wallpaperOffsetY)
     {
+        // ---- Background layer: the user's wallpaper sliced to this monitor's portion
+        //      of the virtual desktop. Falls back to a flat color if no wallpaper is
+        //      loaded yet. Sits inside a Border whose CornerRadius clips the overflow.
+        var bgFill = new Border
+        {
+            CornerRadius = new CornerRadius(8),
+            Background = (Brush)Application.Current.Resources["ControlFillColorSecondaryBrush"],
+        };
+        if (_wallpaperBitmap != null && wallpaperWidth > 0 && wallpaperHeight > 0)
+        {
+            var canvas = new Canvas { Width = width, Height = height };
+            var img = new Image
+            {
+                Source = _wallpaperBitmap,
+                Width = wallpaperWidth,
+                Height = wallpaperHeight,
+                Stretch = Stretch.UniformToFill,
+            };
+            Canvas.SetLeft(img, wallpaperOffsetX);
+            Canvas.SetTop(img, wallpaperOffsetY);
+            canvas.Children.Add(img);
+            bgFill.Child = canvas;
+        }
+
+        // ---- Darken overlay for legibility (slight when on, heavy when off).
+        var darken = new Border
+        {
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(
+                isOn ? Color.FromArgb(60, 0, 0, 0) : Color.FromArgb(180, 0, 0, 0)),
+        };
+
+        // ---- Foreground content: number + badges + glyph + resolution.
         var numberText = new TextBlock
         {
             Text = m.Index.ToString(),
@@ -442,11 +513,12 @@ public sealed partial class MainWindow : Window
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(Colors.White),
         };
 
         var primaryBadge = new Border
         {
-            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentFillColorDefaultBrush"],
+            Background = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"],
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(6, 1, 6, 2),
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -457,21 +529,27 @@ public sealed partial class MainWindow : Window
             {
                 Text = "Primary",
                 FontSize = 10,
-                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextOnAccentFillColorPrimaryBrush"],
+                Foreground = (Brush)Application.Current.Resources["TextOnAccentFillColorPrimaryBrush"],
             },
         };
 
-        var stateGlyph = new FontIcon
+        var stateBadge = new Border
         {
-            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets"),
-            Glyph = isOn ? "\uE73E" : "\uE711", // CheckMark / Cancel
-            FontSize = 12,
+            Background = new SolidColorBrush(isOn
+                ? Color.FromArgb(220, 16, 124, 16)   // green when on
+                : Color.FromArgb(220, 90, 90, 90)),  // gray when off
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(7, 1, 7, 2),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 8, 10, 0),
-            Foreground = isOn
-                ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorPrimaryBrush"]
-                : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(0, 6, 6, 0),
+            Child = new TextBlock
+            {
+                Text = isOn ? "On" : "Off",
+                FontSize = 10,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.White),
+            },
         };
 
         var resText = new TextBlock
@@ -481,13 +559,15 @@ public sealed partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Bottom,
             Margin = new Thickness(0, 0, 0, 6),
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Foreground = new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)),
         };
 
         var grid = new Grid();
+        grid.Children.Add(bgFill);
+        grid.Children.Add(darken);
         grid.Children.Add(numberText);
         grid.Children.Add(primaryBadge);
-        grid.Children.Add(stateGlyph);
+        grid.Children.Add(stateBadge);
         grid.Children.Add(resText);
 
         var button = new Button
@@ -497,24 +577,18 @@ public sealed partial class MainWindow : Window
             Padding = new Thickness(0),
             CornerRadius = new CornerRadius(10),
             Content = grid,
-            Tag = m.DeviceName,
-            Opacity = isOn ? 1.0 : 0.55,
+            Tag = m.HardwareId,
+            Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(isOn ? 2 : 1),
+            BorderBrush = isOn
+                ? (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"]
+                : (Brush)Application.Current.Resources["ControlStrokeColorDefaultBrush"],
         };
-        if (isOn)
-        {
-            button.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
-            button.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"];
-        }
-        else
-        {
-            button.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ControlStrokeColorDefaultBrush"];
-            button.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ControlFillColorDisabledBrush"];
-        }
 
-        var tooltipText = string.IsNullOrEmpty(m.FriendlyName)
-            ? $"Display {m.Index}{(m.IsPrimary ? " (Primary)" : "")}\n{m.Width}\u00D7{m.Height} at {m.Left},{m.Top}\n\nClick to turn hot corners {(isOn ? "off" : "on")} for this display."
-            : $"Display {m.Index} — {m.FriendlyName}{(m.IsPrimary ? " (Primary)" : "")}\n{m.Width}\u00D7{m.Height} at {m.Left},{m.Top}\n\nClick to turn hot corners {(isOn ? "off" : "on")} for this display.";
+        var nameLabel = string.IsNullOrEmpty(m.FriendlyName)
+            ? $"Display {m.Index}"
+            : $"Display {m.Index} — {m.FriendlyName}";
+        var tooltipText = $"{nameLabel}{(m.IsPrimary ? " (Primary)" : "")}\n{m.Width}\u00D7{m.Height} at {m.Left},{m.Top}\n\nClick to turn hot corners {(isOn ? "off" : "on")} for this display.";
         ToolTipService.SetToolTip(button, tooltipText);
 
         button.Click += OnMonitorTileClick;

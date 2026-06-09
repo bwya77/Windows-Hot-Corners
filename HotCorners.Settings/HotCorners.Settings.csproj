@@ -50,6 +50,7 @@
     <Compile Include="..\Models.cs" Link="Shared\Models.cs" />
     <Compile Include="..\ActionLabels.cs" Link="Shared\ActionLabels.cs" />
     <Compile Include="..\Updates\UpdateChecker.cs" Link="Shared\UpdateChecker.cs" />
+    <Compile Include="..\Monitors\MonitorIdResolver.cs" Link="Shared\MonitorIdResolver.cs" />
   </ItemGroup>
 
 </Project>

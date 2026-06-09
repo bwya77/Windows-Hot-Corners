@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using HotCorners.Monitors;
 using HotCorners.Overlay;
 using HotCorners.Settings;
 using HotCorners.UI;
@@ -76,10 +77,23 @@ internal sealed class TrayContext : ApplicationContext
         _updateService = new UpdateService(_tray, ShowUpdatePrompt);
         _updateService.StartBackgroundChecks();
 
+        // Drop the adapter-name → hardware-ID cache whenever the display arrangement
+        // changes (dock, undock, monitor connect/disconnect, layout reshuffle). Also
+        // re-run migration in case a legacy \\.\DISPLAYn key that we couldn't resolve
+        // at startup now matches a freshly-connected display.
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+
         // External edits (from the WinUI settings app or a manual JSON tweak) arrive on a
         // background thread; marshal back onto the UI thread so any tray text refresh stays
         // single-threaded.
         _store.Changed += OnSettingsChanged;
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        MonitorIdResolver.InvalidateCache();
+        if (_uiContext != null) _uiContext.Post(_ => MigrateLegacyMonitorMode(), null);
+        else MigrateLegacyMonitorMode();
     }
 
     private ContextMenuStrip BuildMenu()
@@ -115,16 +129,47 @@ internal sealed class TrayContext : ApplicationContext
 
     private void MigrateLegacyMonitorMode()
     {
-        if (_settings.MultiMonitor != MultiMonitorMode.PrimaryOnly) return;
-
+        var changed = false;
         var migrated = _settings.Clone();
-        foreach (var s in Screen.AllScreens)
+
+        // 1. v0.4.x PrimaryOnly radio → per-monitor disabled set, keyed by stable
+        //    hardware ID (not the session-only \\.\DISPLAYn name).
+        if (migrated.MultiMonitor == MultiMonitorMode.PrimaryOnly)
         {
-            if (!s.Primary) migrated.DisabledMonitors.Add(s.DeviceName);
+            foreach (var s in Screen.AllScreens)
+            {
+                if (!s.Primary) migrated.DisabledMonitors.Add(MonitorIdResolver.Resolve(s.DeviceName));
+            }
+            migrated.MultiMonitor = MultiMonitorMode.AllMonitors;
+            changed = true;
         }
-        migrated.MultiMonitor = MultiMonitorMode.AllMonitors;
-        _store.Save(migrated);
-        _settings = migrated;
+
+        // 2. v0.5.0 stored \\.\DISPLAYn keys directly. Those aren't stable across
+        //    reconnects / docking, so upgrade any such entries to their current
+        //    hardware ID. Entries that don't currently resolve are dropped — the
+        //    device isn't here, and the legacy key is meaningless without it.
+        var legacy = migrated.DisabledMonitors.Where(MonitorIdResolver.IsLegacyAdapterKey).ToList();
+        if (legacy.Count > 0)
+        {
+            foreach (var key in legacy)
+            {
+                migrated.DisabledMonitors.Remove(key);
+                var match = Screen.AllScreens.FirstOrDefault(s =>
+                    string.Equals(s.DeviceName, key, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    var hwid = MonitorIdResolver.Resolve(match.DeviceName);
+                    if (!string.IsNullOrEmpty(hwid)) migrated.DisabledMonitors.Add(hwid);
+                }
+            }
+            changed = true;
+        }
+
+        if (changed)
+        {
+            _store.Save(migrated);
+            _settings = migrated;
+        }
     }
 
     private static void ShowAbout()
@@ -322,15 +367,25 @@ internal sealed class TrayContext : ApplicationContext
     // monitor in the relevant direction. This makes "internal" corners between monitors
     // (where the cursor can keep moving) inert, which matches macOS hot-corner behavior.
     // Returns the matching Screen so the overlay knows which monitor to anchor to.
-    // Honors AppSettings.DisabledMonitors so the user can switch hot corners off on a
-    // single display from the Monitors picker without losing their corner bindings.
+    //
+    // Per-monitor disable: each connected Screen is mapped to its stable hardware ID via
+    // MonitorIdResolver. If that ID is in AppSettings.DisabledMonitors the display is
+    // skipped. Identifiers persist across reconnects on the same port, so the user's
+    // office-vs-home arrangement is remembered.
+    //
+    // Docking fallback: if the user has disabled every currently-connected display
+    // (e.g. they unplugged their docked screen and only the previously-disabled laptop
+    // remains), arm everything for this session instead of leaving the app silently
+    // dead. They can still pause from the tray for an explicit "off" state.
     private static (Corner, Screen?) DetectCorner(POINT pt, AppSettings settings)
     {
         const int tol = 2;
         var all = Screen.AllScreens;
+        if (all.Length == 0) return (Corner.None, null);
+
         var disabled = settings.DisabledMonitors;
-        var armed = all.Where(s => !disabled.Contains(s.DeviceName)).ToArray();
-        if (armed.Length == 0) return (Corner.None, null);
+        var armed = all.Where(s => !disabled.Contains(MonitorIdResolver.Resolve(s.DeviceName))).ToArray();
+        if (armed.Length == 0) armed = all;
 
         foreach (var s in armed)
         {
@@ -412,6 +467,7 @@ internal sealed class TrayContext : ApplicationContext
             _trayWatchdog.Dispose();
             _taskbarListener.Dispose();
             _updateService.Dispose();
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
             _store.Changed -= OnSettingsChanged;
             _store.Dispose();
             _overlay.Dispose();

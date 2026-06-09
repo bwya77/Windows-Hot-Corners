@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using HotCorners.Monitors;
 
 namespace HotCorners.SettingsApp;
 
@@ -6,9 +7,10 @@ namespace HotCorners.SettingsApp;
 /// Pure-Win32 enumeration of physical monitors for the settings UI. The tray app uses
 /// <c>System.Windows.Forms.Screen</c> for the same data, but this WinUI 3 project has
 /// no WinForms reference, so we go straight to <c>EnumDisplayMonitors</c> +
-/// <c>GetMonitorInfoW</c> + <c>EnumDisplayDevicesW</c>. The <see cref="MonitorInfo.DeviceName"/>
-/// here matches <c>Screen.DeviceName</c> verbatim ("\\.\DISPLAY1"), so the disabled-monitor
-/// set written by this UI is the same key set the tray reads at corner-detection time.
+/// <c>GetMonitorInfoW</c> + <c>EnumDisplayDevicesW</c>. The <see cref="MonitorInfo.AdapterDeviceName"/>
+/// here matches <c>Screen.DeviceName</c> verbatim ("\\.\DISPLAY1"); the
+/// <see cref="MonitorInfo.HardwareId"/> is the stable per-panel identifier we actually
+/// use as the disabled-set key (resolved through <see cref="MonitorIdResolver"/>).
 /// </summary>
 internal static class MonitorEnumerator
 {
@@ -20,10 +22,11 @@ internal static class MonitorEnumerator
             var mi = new MONITORINFOEX { cbSize = Marshal.SizeOf<MONITORINFOEX>() };
             if (GetMonitorInfoW(hMon, ref mi))
             {
-                var name = mi.szDevice ?? "";
+                var adapter = mi.szDevice ?? "";
                 list.Add(new MonitorInfo(
-                    DeviceName: name,
-                    FriendlyName: ResolveFriendlyName(name),
+                    AdapterDeviceName: adapter,
+                    HardwareId: MonitorIdResolver.Resolve(adapter),
+                    FriendlyName: ResolveFriendlyName(adapter),
                     Left: mi.rcMonitor.Left,
                     Top: mi.rcMonitor.Top,
                     Right: mi.rcMonitor.Right,
@@ -108,7 +111,8 @@ internal static class MonitorEnumerator
 }
 
 internal sealed record MonitorInfo(
-    string DeviceName,
+    string AdapterDeviceName,
+    string HardwareId,
     string FriendlyName,
     int Left,
     int Top,
@@ -120,3 +124,4 @@ internal sealed record MonitorInfo(
     public int Width => Right - Left;
     public int Height => Bottom - Top;
 }
+

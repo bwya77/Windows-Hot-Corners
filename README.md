@@ -78,7 +78,7 @@ The settings window shows a screen-shaped preview with a dropdown for each of th
 
 * **Dwell time:** how long you have to hold the cursor in a corner before it fires. The default of 25 milliseconds feels nearly instant. Raise it if you keep firing corners by accident, lower it for the snappiest possible response.
 * **Corner overlay:** a soft, translucent puddle blooms into the corner as you hold the cursor there, then gently fades out when the action fires. It adapts to your Windows theme (light puddle on dark wallpapers, dark puddle on light ones) and clicks pass right through it. On by default.
-* **Monitors:** see a Windows Settings style map of all your displays and click any monitor to switch hot corners on or off for just that screen. Your corner bindings stay put either way.
+* **Monitors:** see a Windows Settings style map of all your displays with your actual wallpaper sliced across them, and click any monitor to switch hot corners on or off for just that screen. Your choices are remembered per physical display so a dock-and-go laptop picks up where it left off when you plug back in. Your corner bindings stay put either way.
 * **Suppress in full-screen apps:** skip firing while a real full-screen app such as a game or a full-screen video is in the foreground, so you don't accidentally open Task View mid-match.
 * **Start with Windows:** Hot Corners launches automatically when you sign in. On by default.
 * **Pause:** turn the corners off temporarily without quitting the app. Handy when you're doing fine work near a corner.
