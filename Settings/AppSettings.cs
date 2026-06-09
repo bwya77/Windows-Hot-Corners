@@ -42,12 +42,21 @@ public sealed class AppSettings
     public MultiMonitorMode MultiMonitor { get; set; } = MultiMonitorMode.AllMonitors;
 
     /// <summary>
-    /// Device names (e.g. <c>\\.\DISPLAY1</c>) of monitors where hot corners should NOT
-    /// fire. Empty means every connected display is armed (the default). Set membership
-    /// is the only enable/disable signal — primary vs. secondary doesn't matter.
-    /// Stable enough across reconnects for the same monitor on the same port; if the
-    /// user reshuffles cables the picker will just show the new arrangement and they
-    /// re-toggle.
+    /// Per-monitor per-corner enable matrix. Each entry is keyed as
+    /// <c>"&lt;hardwareId&gt;|&lt;Corner&gt;"</c> (e.g.
+    /// <c>"\\?\DISPLAY#DELA0DC#...#{guid}|TopLeft"</c>) and lists the
+    /// (display, corner) pairs where hot corners are switched OFF. Empty means every
+    /// corner on every connected display is armed. The Monitors pane in the settings
+    /// app toggles individual entries; stacked-monitor users can route top-edge
+    /// actions to one display and bottom-edge actions to another.
+    /// </summary>
+    public HashSet<string> DisabledMonitorCorners { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Legacy v0.5 field: hardware IDs of monitors where ALL FOUR corners were
+    /// disabled. Migrated into <see cref="DisabledMonitorCorners"/> on first launch
+    /// after upgrading (each entry expanded to 4 corner keys); kept here so older
+    /// settings files still deserialize without losing the user's preference.
     /// </summary>
     public HashSet<string> DisabledMonitors { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -65,6 +74,8 @@ public sealed class AppSettings
         // names like "\\.\DISPLAY1" match regardless of how Windows happens to spell them.
         if (DisabledMonitors.Comparer != StringComparer.OrdinalIgnoreCase)
             DisabledMonitors = new HashSet<string>(DisabledMonitors, StringComparer.OrdinalIgnoreCase);
+        if (DisabledMonitorCorners.Comparer != StringComparer.OrdinalIgnoreCase)
+            DisabledMonitorCorners = new HashSet<string>(DisabledMonitorCorners, StringComparer.OrdinalIgnoreCase);
     }
 
     public AppSettings Clone()
@@ -79,6 +90,7 @@ public sealed class AppSettings
             MultiMonitor = MultiMonitor,
             Bindings = new Dictionary<Corner, HotAction>(Bindings),
             DisabledMonitors = new HashSet<string>(DisabledMonitors, StringComparer.OrdinalIgnoreCase),
+            DisabledMonitorCorners = new HashSet<string>(DisabledMonitorCorners, StringComparer.OrdinalIgnoreCase),
         };
         return copy;
     }

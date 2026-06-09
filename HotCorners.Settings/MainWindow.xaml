@@ -161,7 +161,7 @@
                                                Style="{StaticResource CaptionTextBlockStyle}" />
                                     <Button x:Name="MonitorsResetButton"
                                             Grid.Column="1"
-                                            Content="Enable all displays"
+                                            Content="Enable every corner"
                                             Click="OnEnableAllMonitors" />
                                 </Grid>
                             </StackPanel>

@@ -53,55 +53,21 @@ internal sealed class UpdateService : IDisposable
         {
             if (showIfUpToDate)
             {
-                MessageBox.Show(
-                    $"You're running the latest version (v{UpdateChecker.CurrentVersion.ToString(3)}).",
+                _tray.ShowBalloonTip(
+                    4000,
                     "Hot Corners",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                    $"You're on the latest version (v{UpdateChecker.CurrentVersion.ToString(3)}).",
+                    ToolTipIcon.Info);
             }
             return;
         }
 
         _pending = info;
         _tray.ShowBalloonTip(
-            8000,
+            10000,
             "Hot Corners update available",
-            $"Version {info.Latest.ToString(3)} is available. Click to install.",
+            $"Version {info.Latest.ToString(3)} is ready. Click here to install.",
             ToolTipIcon.Info);
-
-        if (showIfUpToDate)
-        {
-            _onUpdateFound(info);
-        }
-    }
-
-    /// <summary>
-    /// Download the matching installer to %TEMP% and launch it elevated. The installer's
-    /// CloseApplications setting will terminate the running app so its files can be replaced,
-    /// then relaunch it via the [Run] section. Returns true if the installer was launched.
-    /// </summary>
-    public static async Task<bool> DownloadAndLaunchAsync(UpdateChecker.UpdateInfo info, IProgress<double>? progress = null)
-    {
-        if (string.IsNullOrEmpty(info.InstallerUrl)) return false;
-
-        var path = await UpdateChecker.DownloadInstallerAsync(info.InstallerUrl, progress).ConfigureAwait(true);
-        if (path == null) return false;
-
-        try
-        {
-            var psi = new ProcessStartInfo(path)
-            {
-                UseShellExecute = true,
-                Verb = "runas",
-                Arguments = "/SILENT",
-            };
-            Process.Start(psi);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     public void Dispose()

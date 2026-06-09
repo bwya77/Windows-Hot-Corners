@@ -26,7 +26,7 @@ internal sealed class TrayContext : ApplicationContext
     private bool _firedForThisEntry;
     private bool _paused;
     private Process? _settingsProcess;
-    private UpdatePromptForm? _updateForm;
+    private bool _updateInFlight;
     private ToolStripMenuItem? _pauseItem;
     private readonly SynchronizationContext? _uiContext;
 
@@ -74,7 +74,7 @@ internal sealed class TrayContext : ApplicationContext
         _trayWatchdog.Tick += (_, _) => EnsureTrayVisible();
         _trayWatchdog.Start();
 
-        _updateService = new UpdateService(_tray, ShowUpdatePrompt);
+        _updateService = new UpdateService(_tray, info => _ = ApplyPendingUpdateAsync(info));
         _updateService.StartBackgroundChecks();
 
         // Drop the adapter-name → hardware-ID cache whenever the display arrangement
@@ -110,9 +110,9 @@ internal sealed class TrayContext : ApplicationContext
             onUpdate: () =>
             {
                 var info = _updateService.PendingUpdate;
-                if (info != null) ShowUpdatePrompt(info);
+                if (info != null) _ = ApplyPendingUpdateAsync(info);
             },
-            onSettings: OpenSettings,
+            onSettings: () => OpenSettings(),
             onTogglePause: () =>
             {
                 _paused = !_paused;
@@ -165,6 +165,25 @@ internal sealed class TrayContext : ApplicationContext
             changed = true;
         }
 
+        // 3. v0.5.1 stored whole-monitor entries in DisabledMonitors. v0.5.2 moved to
+        //    per-corner control. Expand each whole-monitor entry into all four corner
+        //    keys so the user's "this display off" preference becomes "all four corners
+        //    of this display off" with no change in observable behavior. Empty the
+        //    legacy set after expansion so it stays authoritative-source-of-truth-free.
+        if (migrated.DisabledMonitors.Count > 0)
+        {
+            foreach (var hwid in migrated.DisabledMonitors)
+            {
+                foreach (Corner c in Enum.GetValues<Corner>())
+                {
+                    if (c == Corner.None) continue;
+                    migrated.DisabledMonitorCorners.Add(CornerKey(hwid, c));
+                }
+            }
+            migrated.DisabledMonitors.Clear();
+            changed = true;
+        }
+
         if (changed)
         {
             _store.Save(migrated);
@@ -172,15 +191,10 @@ internal sealed class TrayContext : ApplicationContext
         }
     }
 
-    private static void ShowAbout()
-    {
-        var v = UpdateChecker.CurrentVersion.ToString(3);
-        MessageBox.Show(
-            $"Hot Corners for Windows\nVersion {v}\n\nMove your cursor into a screen corner to trigger an action.\n\nhttps://github.com/bwya77/Windows-Hot-Corners",
-            "About Hot Corners",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
-    }
+    /// <summary>Compose a single dictionary key for a (display, corner) pair.</summary>
+    internal static string CornerKey(string hardwareId, Corner corner) => hardwareId + "|" + corner;
+
+    private void ShowAbout() => OpenSettings("about");
 
     private void OnSettingsChanged(AppSettings updated)
     {
@@ -206,9 +220,11 @@ internal sealed class TrayContext : ApplicationContext
     /// <summary>
     /// Open the standalone WinUI 3 settings window. If it's already running, focus its
     /// existing process; otherwise launch HotCorners.Settings.exe (which sits in the
-    /// "Settings" subfolder next to the tray exe per the installer layout).
+    /// "Settings" subfolder next to the tray exe per the installer layout). An optional
+    /// pane tag (e.g. "about") routes via the --pane=&lt;tag&gt; command-line arg so the
+    /// tray's About menu opens straight to the matching NavigationView item.
     /// </summary>
-    private void OpenSettings()
+    private void OpenSettings(string? pane = null)
     {
         if (_settingsProcess is { HasExited: false })
         {
@@ -234,11 +250,13 @@ internal sealed class TrayContext : ApplicationContext
 
         try
         {
-            _settingsProcess = Process.Start(new ProcessStartInfo(path)
+            var psi = new ProcessStartInfo(path)
             {
                 UseShellExecute = false,
                 WorkingDirectory = Path.GetDirectoryName(path) ?? "",
-            });
+            };
+            if (!string.IsNullOrEmpty(pane)) psi.ArgumentList.Add("--pane=" + pane);
+            _settingsProcess = Process.Start(psi);
         }
         catch (Exception ex)
         {
@@ -289,16 +307,75 @@ internal sealed class TrayContext : ApplicationContext
         return null;
     }
 
-    private void ShowUpdatePrompt(UpdateChecker.UpdateInfo info)
+    /// <summary>
+    /// Swoosh-style silent update: download the matching installer in the background and run it
+    /// with /VERYSILENT. The installer's CloseApplications + AppMutex handle file replacement and
+    /// the [Run]/Check: WizardSilent line relaunches the tray. There's no modal dialog and no
+    /// changelog window — the user sees only the "Downloading…" tray balloon and then the
+    /// freshly-updated tray icon when the new version starts.
+    /// </summary>
+    private async Task ApplyPendingUpdateAsync(UpdateChecker.UpdateInfo info)
     {
-        if (_updateForm is { IsDisposed: false })
+        if (_updateInFlight) return;
+        _updateInFlight = true;
+        try
         {
-            _updateForm.Activate();
-            return;
+            if (string.IsNullOrEmpty(info.InstallerUrl))
+            {
+                // No installer asset on this release — fall back to the GitHub page.
+                _tray.ShowBalloonTip(5000, "Hot Corners",
+                    "This release didn't ship an installer. Opening the releases page.",
+                    ToolTipIcon.Warning);
+                OpenReleasesPage(info.HtmlUrl);
+                return;
+            }
+
+            _tray.ShowBalloonTip(4000, "Hot Corners",
+                $"Downloading version {info.Latest.ToString(3)}…",
+                ToolTipIcon.Info);
+
+            var path = await UpdateChecker.DownloadInstallerAsync(info.InstallerUrl).ConfigureAwait(true);
+            if (path == null)
+            {
+                _tray.ShowBalloonTip(5000, "Hot Corners",
+                    "Couldn't download the update. Opening the releases page instead.",
+                    ToolTipIcon.Warning);
+                OpenReleasesPage(info.HtmlUrl);
+                return;
+            }
+
+            // /VERYSILENT + /SUPPRESSMSGBOXES runs the Inno Setup installer without a wizard.
+            // The Inno script's AppMutex + CloseApplications + PrepareToInstall taskkill all
+            // converge to make file replacement reliable; [Run] with Check: WizardSilent
+            // relaunches HotCorners.exe after the install finishes. UAC is triggered once
+            // because the installer manifest requires admin.
+            try
+            {
+                Process.Start(new ProcessStartInfo(path)
+                {
+                    UseShellExecute = true,
+                    Arguments = "/VERYSILENT /SUPPRESSMSGBOXES",
+                });
+            }
+            catch
+            {
+                _tray.ShowBalloonTip(5000, "Hot Corners",
+                    "Could not start the installer. Opening the releases page instead.",
+                    ToolTipIcon.Warning);
+                OpenReleasesPage(info.HtmlUrl);
+            }
         }
-        _updateForm = new UpdatePromptForm(info);
-        _updateForm.FormClosed += (_, _) => _updateForm = null;
-        _updateForm.Show();
+        finally
+        {
+            _updateInFlight = false;
+        }
+    }
+
+    private static void OpenReleasesPage(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return;
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { /* shell can't open browser — nothing actionable */ }
     }
 
     private void EnsureTrayVisible()
@@ -368,26 +445,25 @@ internal sealed class TrayContext : ApplicationContext
     // (where the cursor can keep moving) inert, which matches macOS hot-corner behavior.
     // Returns the matching Screen so the overlay knows which monitor to anchor to.
     //
-    // Per-monitor disable: each connected Screen is mapped to its stable hardware ID via
-    // MonitorIdResolver. If that ID is in AppSettings.DisabledMonitors the display is
-    // skipped. Identifiers persist across reconnects on the same port, so the user's
-    // office-vs-home arrangement is remembered.
+    // Per-corner disable: each (display, corner) pair can be switched off in the
+    // Monitors pane (e.g. stacked monitors where the top one only handles top corners
+    // and the bottom only handles bottom corners). DisabledMonitorCorners stores those
+    // pairs as "<hardware-id>|<Corner>" strings; the hardware ID survives reconnects
+    // and dock/undock on the same port.
     //
-    // Docking fallback: if the user has disabled every currently-connected display
-    // (e.g. they unplugged their docked screen and only the previously-disabled laptop
-    // remains), arm everything for this session instead of leaving the app silently
-    // dead. They can still pause from the tray for an explicit "off" state.
+    // Docking fallback: if every connected display has every corner disabled, arm
+    // everything for this session instead of leaving the app silently dead. They can
+    // still pause from the tray for an explicit "off" state.
     private static (Corner, Screen?) DetectCorner(POINT pt, AppSettings settings)
     {
         const int tol = 2;
         var all = Screen.AllScreens;
         if (all.Length == 0) return (Corner.None, null);
 
-        var disabled = settings.DisabledMonitors;
-        var armed = all.Where(s => !disabled.Contains(MonitorIdResolver.Resolve(s.DeviceName))).ToArray();
-        if (armed.Length == 0) armed = all;
+        var disabled = settings.DisabledMonitorCorners;
+        var fallbackToAll = AllCornersDisabledOnEveryConnectedDisplay(all, disabled);
 
-        foreach (var s in armed)
+        foreach (var s in all)
         {
             var b = s.Bounds;
             var atLeft = pt.X <= b.Left + tol;
@@ -397,20 +473,46 @@ internal sealed class TrayContext : ApplicationContext
 
             if (!((atLeft || atRight) && (atTop || atBottom))) continue;
 
-            // "Blocked" must be evaluated against ALL physical monitors, not just the
-            // armed subset. A disabled monitor still lets the cursor escape past that
-            // edge, so the corner can't actually be trapped there.
+            // "Blocked" must be evaluated against ALL physical monitors. A disabled
+            // corner still lets the cursor escape past the edge of an adjoining
+            // display, so the corner can't actually be trapped there.
             var leftBlocked = atLeft && HasNeighborHorizontally(all, s, pt.Y, leftSide: true);
             var rightBlocked = atRight && HasNeighborHorizontally(all, s, pt.Y, leftSide: false);
             var topBlocked = atTop && HasNeighborVertically(all, s, pt.X, topSide: true);
             var bottomBlocked = atBottom && HasNeighborVertically(all, s, pt.X, topSide: false);
 
-            if (atTop && atLeft && !topBlocked && !leftBlocked) return (Corner.TopLeft, s);
-            if (atTop && atRight && !topBlocked && !rightBlocked) return (Corner.TopRight, s);
-            if (atBottom && atLeft && !bottomBlocked && !leftBlocked) return (Corner.BottomLeft, s);
-            if (atBottom && atRight && !bottomBlocked && !rightBlocked) return (Corner.BottomRight, s);
+            Corner candidate = Corner.None;
+            if (atTop && atLeft && !topBlocked && !leftBlocked) candidate = Corner.TopLeft;
+            else if (atTop && atRight && !topBlocked && !rightBlocked) candidate = Corner.TopRight;
+            else if (atBottom && atLeft && !bottomBlocked && !leftBlocked) candidate = Corner.BottomLeft;
+            else if (atBottom && atRight && !bottomBlocked && !rightBlocked) candidate = Corner.BottomRight;
+            if (candidate == Corner.None) continue;
+
+            if (!fallbackToAll)
+            {
+                var hwid = MonitorIdResolver.Resolve(s.DeviceName);
+                if (disabled.Contains(CornerKey(hwid, candidate))) continue;
+            }
+            return (candidate, s);
         }
         return (Corner.None, null);
+    }
+
+    /// <summary>True when every connected display has all four corners disabled — the
+    /// dock-undock safety net so the app never goes silently dead.</summary>
+    private static bool AllCornersDisabledOnEveryConnectedDisplay(Screen[] all, HashSet<string> disabled)
+    {
+        if (disabled.Count == 0) return false;
+        foreach (var s in all)
+        {
+            var hwid = MonitorIdResolver.Resolve(s.DeviceName);
+            foreach (Corner c in Enum.GetValues<Corner>())
+            {
+                if (c == Corner.None) continue;
+                if (!disabled.Contains(CornerKey(hwid, c))) return false;
+            }
+        }
+        return true;
     }
 
     private static bool HasNeighborHorizontally(Screen[] all, Screen self, int y, bool leftSide)
