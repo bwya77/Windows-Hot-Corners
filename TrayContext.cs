@@ -320,6 +320,8 @@ internal sealed class TrayContext : ApplicationContext
         _updateInFlight = true;
         try
         {
+            LogUpdate($"Apply requested for v{info.Latest.ToString(3)} (installerUrl={info.InstallerUrl ?? "<none>"})");
+
             if (string.IsNullOrEmpty(info.InstallerUrl))
             {
                 // No installer asset on this release — fall back to the GitHub page.
@@ -331,12 +333,13 @@ internal sealed class TrayContext : ApplicationContext
             }
 
             _tray.ShowBalloonTip(4000, "Hot Corners",
-                $"Downloading version {info.Latest.ToString(3)}…",
+                $"Downloading version {info.Latest.ToString(3)}\u2026",
                 ToolTipIcon.Info);
 
             var path = await UpdateChecker.DownloadInstallerAsync(info.InstallerUrl).ConfigureAwait(true);
-            if (path == null)
+            if (path == null || !File.Exists(path))
             {
+                LogUpdate("Download returned null or missing file.");
                 _tray.ShowBalloonTip(5000, "Hot Corners",
                     "Couldn't download the update. Opening the releases page instead.",
                     ToolTipIcon.Warning);
@@ -344,31 +347,72 @@ internal sealed class TrayContext : ApplicationContext
                 return;
             }
 
-            // /VERYSILENT + /SUPPRESSMSGBOXES runs the Inno Setup installer without a wizard.
-            // The Inno script's AppMutex + CloseApplications + PrepareToInstall taskkill all
-            // converge to make file replacement reliable; [Run] with Check: WizardSilent
-            // relaunches HotCorners.exe after the install finishes. UAC is triggered once
-            // because the installer manifest requires admin.
+            var sz = new FileInfo(path).Length;
+            LogUpdate($"Downloaded {sz} bytes to {path}.");
+            if (sz < 1024 * 1024) // sanity: installer is ~100 MB, never under 1 MB
+            {
+                LogUpdate("Downloaded file is suspiciously small. Aborting install.");
+                _tray.ShowBalloonTip(5000, "Hot Corners",
+                    "Update download was incomplete. Opening the releases page instead.",
+                    ToolTipIcon.Warning);
+                OpenReleasesPage(info.HtmlUrl);
+                return;
+            }
+
+            // /VERYSILENT runs the Inno installer with no progress UI. We deliberately do
+            // NOT pass /SUPPRESSMSGBOXES so the close-applications dialog can still flag a
+            // problem instead of being silently dismissed in the "cancel" direction (which
+            // was making installs vanish without a trace).
+            //
+            // Critical: we exit the tray BEFORE launching the installer, otherwise the
+            // installer has to fight the running tray for file locks via Restart Manager
+            // and a /SUPPRESSMSGBOXES failure leaves the user back where they started.
+            // The installer is started via ShellExecute (separate elevated process tree),
+            // so our process exiting doesn't take the installer down with it.
             try
             {
                 Process.Start(new ProcessStartInfo(path)
                 {
                     UseShellExecute = true,
-                    Arguments = "/VERYSILENT /SUPPRESSMSGBOXES",
+                    Arguments = "/VERYSILENT",
                 });
+                LogUpdate("Installer launched. Exiting tray so file replacement can proceed cleanly.");
             }
-            catch
+            catch (Exception ex)
             {
+                LogUpdate($"Process.Start failed: {ex.GetType().Name}: {ex.Message}");
                 _tray.ShowBalloonTip(5000, "Hot Corners",
                     "Could not start the installer. Opening the releases page instead.",
                     ToolTipIcon.Warning);
                 OpenReleasesPage(info.HtmlUrl);
+                return;
             }
+
+            // Give the user a beat to see the balloon, then exit. The installer's [Run]
+            // section relaunches HotCorners.exe via Check: WizardSilent after install
+            // completes, so the tray reappears on its own.
+            await Task.Delay(500).ConfigureAwait(true);
+            ExitThread();
         }
         finally
         {
             _updateInFlight = false;
         }
+    }
+
+    /// <summary>
+    /// Append a timestamped line to %TEMP%\HotCorners-update.log so failed updates leave
+    /// breadcrumbs the user can share. All errors are swallowed -- logging is best effort.
+    /// </summary>
+    private static void LogUpdate(string message)
+    {
+        try
+        {
+            var logPath = Path.Combine(Path.GetTempPath(), "HotCorners-update.log");
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
+            File.AppendAllText(logPath, line);
+        }
+        catch { /* logging must never crash the updater */ }
     }
 
     private static void OpenReleasesPage(string url)
