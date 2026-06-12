@@ -29,9 +29,54 @@ internal static class MonitorIdResolver
     public static bool IsLegacyAdapterKey(string key) =>
         !string.IsNullOrEmpty(key) && key.StartsWith(@"\\.\DISPLAY", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>True if the given key still carries the un-normalized device interface
+    /// form (e.g. <c>\\?\DISPLAY#DELA0DC#7&amp;1c8e8de7&amp;0&amp;UID8453#{guid}</c>) — the
+    /// middle "instance" segment is bus-path info that can shift across reboots, dock
+    /// connect/disconnect, or USB-C topology changes, which previously broke per-monitor
+    /// settings for users whose saved keys included it. The v0.5.5 migration normalizes
+    /// these to a stable EDID-based form via <see cref="NormalizeHardwareId"/>.</summary>
+    public static bool IsUnnormalizedDeviceId(string key) =>
+        !string.IsNullOrEmpty(key) && key.StartsWith(@"\\?\DISPLAY#", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Reduce a raw <c>EnumDisplayDevices</c> device interface name to its stable
+    /// EDID-based portion. The full form looks like:
+    /// <c>\\?\DISPLAY#DELA0DC#7&amp;1c8e8de7&amp;0&amp;UID8453#{guid}</c> — the middle
+    /// <c>7&amp;1c8e8de7&amp;0</c> segment is bus-instance info that can change across
+    /// reboots and dock topology shifts, so we drop it and keep just the EDID
+    /// manufacturer+model code plus the <c>UID####</c> token (which identifies which
+    /// physical port the monitor is attached to). Result looks like <c>DELA0DC#UID8453</c>
+    /// or just <c>DELA0DC</c> when no UID is present.
+    ///
+    /// Inputs that don't match the expected form are returned unchanged so legacy
+    /// adapter names like <c>\\.\DISPLAY1</c> still flow through earlier migrations.
+    /// </summary>
+    public static string NormalizeHardwareId(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return raw;
+        if (!raw.StartsWith(@"\\?\DISPLAY#", StringComparison.OrdinalIgnoreCase)) return raw;
+        var parts = raw.Split('#');
+        if (parts.Length < 2) return raw;
+        var edid = parts[1];
+        if (string.IsNullOrEmpty(edid)) return raw;
+        string? uid = null;
+        if (parts.Length >= 3)
+        {
+            foreach (var token in parts[2].Split('&'))
+            {
+                if (token.StartsWith("UID", StringComparison.OrdinalIgnoreCase))
+                {
+                    uid = token;
+                    break;
+                }
+            }
+        }
+        return uid != null ? $"{edid}#{uid}" : edid;
+    }
+
     /// <summary>Resolve <paramref name="adapterDeviceName"/> (e.g. <c>\\.\DISPLAY1</c>)
-    /// to its stable hardware identifier. Cached because the tray re-resolves every
-    /// 15 ms poll tick — call <see cref="InvalidateCache"/> when displays change.
+    /// to its stable, normalized hardware identifier. Cached because the tray re-resolves
+    /// every 15 ms poll tick — call <see cref="InvalidateCache"/> when displays change.
     /// Returns the adapter name unchanged if the resolution fails so the caller
     /// always has a usable key.</summary>
     public static string Resolve(string adapterDeviceName)
@@ -41,7 +86,7 @@ internal static class MonitorIdResolver
         {
             if (_cache.TryGetValue(adapterDeviceName, out var cached)) return cached;
         }
-        var resolved = ResolveUncached(adapterDeviceName);
+        var resolved = NormalizeHardwareId(ResolveUncached(adapterDeviceName));
         lock (_gate) _cache[adapterDeviceName] = resolved;
         return resolved;
     }

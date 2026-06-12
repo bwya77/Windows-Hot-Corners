@@ -158,6 +158,27 @@ public sealed partial class MainWindow : Window
             changed = true;
         }
 
+        // 4. v0.5.2..v0.5.4 stored the full EnumDisplayDevices interface name as the
+        //    hwid portion of every per-corner key. The middle bus-instance segment of
+        //    that name turned out to shift across reboots and dock topology changes,
+        //    causing saved disabled corners to come back armed. v0.5.5 normalizes the
+        //    hwid down to its stable EDID portion (see MonitorIdResolver.NormalizeHardwareId);
+        //    rewrite any stale long-form keys here so the upgrade is invisible to the user.
+        var stale = migrated.DisabledMonitorCorners
+            .Where(k => k.Contains('|') && MonitorIdResolver.IsUnnormalizedDeviceId(k.Split('|', 2)[0]))
+            .ToList();
+        if (stale.Count > 0)
+        {
+            foreach (var key in stale)
+            {
+                migrated.DisabledMonitorCorners.Remove(key);
+                var split = key.Split('|', 2);
+                var normalized = MonitorIdResolver.NormalizeHardwareId(split[0]);
+                migrated.DisabledMonitorCorners.Add(normalized + "|" + split[1]);
+            }
+            changed = true;
+        }
+
         if (changed) _store.Save(migrated);
     }
 
